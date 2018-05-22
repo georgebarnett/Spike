@@ -25,7 +25,7 @@
 		can also be 1-part or 2-part. It is not necessary to have a 3-part value. 
 		An updated version of application must have a versionNumber value higher 
 		than the previous version. Required for namespace >= 2.5 . -->
-	<versionNumber>1.1.3</versionNumber>
+	<versionNumber>2.0.9</versionNumber>
 
 	<!-- A string value (such as "v1", "2.5", or "Alpha 1") that represents 
 		the version of the application, as it should be shown to users. Optional. -->
@@ -119,7 +119,7 @@
 		<!-- Whether or not to pan when a soft keyboard is raised or lowered (either 
 			"pan" or "none"). Optional. Defaults "pan." -->
 		<!-- <softKeyboardBehavior></softKeyboardBehavior> -->
-		<aspectRatio>portrait</aspectRatio>
+		<aspectRatio>any</aspectRatio>
 		<autoOrients>true</autoOrients>
 		<fullScreen>false</fullScreen>
 		<visible>true</visible>
@@ -199,7 +199,7 @@
 
 	<!-- iOS specific capabilities -->
 	<iPhone>
-		<assetsCar>Assets.car</assetsCar>
+		<!-- <assetsCar>Assets.car</assetsCar> -->
 		<!-- A list of plist key/value pairs to be added to the application Info.plist -->
 		<InfoAdditions>
 			<![CDATA[<key>UIViewControllerBasedStatusBarAppearance</key><false/>]]>
@@ -224,9 +224,9 @@
       					<key>NSAllowsArbitraryLoads</key><true/>
       				</dict>
       			<key>NSHealthUpdateUsageDescription</key>
-				<string>Stores CGM Glucose Readings</string>
+				<string>Stores CGM Glucose Readings, Carbohydrates and Insulin.</string>
       			<key>NSHealthShareUsageDescription</key>
-				<string>Stores CGM Glucose Readings</string>
+				<string>Stores CGM Glucose Readings, Carbohydrates and Insulin.</string>
 				<key>NSBluetoothPeripheralUsageDescription</key>
 				<string>Connects to CGM Transmitters</string>
       				
@@ -237,6 +237,10 @@
 				<key>ITSAppUsesNonExemptEncryption</key><false/>
 				<key>NSCalendarsUsageDescription</key>
 				<string>Access to calendar is required.</string>
+				<key>NSLocationAlwaysUsageDescription</key>
+				<string>Access to your location is required to improve accuracy</string>
+				<key>NSLocationWhenInUseUsageDescription </key>
+				<string>Access to your location is required to improve accuracy</string>
 				<key>CFBundleURLTypes</key>
 				<array>
 					<dict>
@@ -450,6 +454,66 @@
 						<key>UILaunchImageSize</key>
 						<string>{320, 480}</string>
 					</dict>
+					<dict>
+						<key>UILaunchImageMinimumOSVersion</key>
+						<string>8.0</string>
+						<key>UILaunchImageName</key>
+						<string>Default-Landscape-414w-736h@3x~iphone</string>
+						<key>UILaunchImageOrientation</key>
+						<string>Landscape</string>
+						<key>UILaunchImageSize</key>
+						<string>{414, 736}</string>
+					</dict>
+					<dict>
+						<key>UILaunchImageMinimumOSVersion</key>
+						<string>8.0</string>
+						<key>UILaunchImageName</key>
+						<string>Default-Landscape-812h@3x~iphone</string>
+						<key>UILaunchImageOrientation</key>
+						<string>Landscape</string>
+						<key>UILaunchImageSize</key>
+						<string>{375, 812}</string>
+					</dict>
+					<dict>
+						<key>UILaunchImageMinimumOSVersion</key>
+						<string>8.0</string>
+						<key>UILaunchImageName</key>
+						<string>Default-Landscape~ipad</string>
+						<key>UILaunchImageOrientation</key>
+						<string>Landscape</string>
+						<key>UILaunchImageSize</key>
+						<string>{768, 1024}</string>
+					</dict>
+					<dict>
+						<key>UILaunchImageMinimumOSVersion</key>
+						<string>8.0</string>
+						<key>UILaunchImageName</key>
+						<string>Default-Landscape@2x~ipad</string>
+						<key>UILaunchImageOrientation</key>
+						<string>Landscape</string>
+						<key>UILaunchImageSize</key>
+						<string>{768, 1024}</string>
+					</dict>
+					<dict>
+						<key>UILaunchImageMinimumOSVersion</key>
+						<string>8.0</string>
+						<key>UILaunchImageName</key>
+						<string>Default-Landscape-1112h@2x</string>
+						<key>UILaunchImageOrientation</key>
+						<string>Landscape</string>
+						<key>UILaunchImageSize</key>
+						<string>{834, 1112}</string>
+					</dict>
+					<dict>
+						<key>UILaunchImageMinimumOSVersion</key>
+						<string>8.0</string>
+						<key>UILaunchImageName</key>
+						<string>Default-Landscape@2x</string>
+						<key>UILaunchImageOrientation</key>
+						<string>Landscape</string>
+						<key>UILaunchImageSize</key>
+						<string>{1366, 1024}</string>
+					</dict>
 				</array>
             ]]>
 		</InfoAdditions>
@@ -506,7 +570,6 @@
 		<extensionID>com.distriqt.BluetoothLE</extensionID>
 		<extensionID>com.distriqt.Calendar</extensionID>
 		<extensionID>com.distriqt.Core</extensionID>
-		<extensionID>com.distriqt.Exceptions</extensionID>
 		<extensionID>com.distriqt.NetworkInfo</extensionID>
 		<extensionID>com.distriqt.Notifications</extensionID>
 		<extensionID>com.freshplanet.AirBackgroundFetch</extensionID>

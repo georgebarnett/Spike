@@ -1,5 +1,7 @@
 package ui
 {
+	//import com.demonsters.debugger.MonsterDebugger;
+	
 	import events.ScreenEvent;
 	
 	import feathers.controls.Drawers;
@@ -13,6 +15,7 @@ package ui
 	import starling.animation.Transitions;
 	import starling.display.Sprite;
 	import starling.events.Event;
+	import starling.utils.SystemUtil;
 	
 	import ui.screens.AboutScreen;
 	import ui.screens.AdvancedSettingsScreen;
@@ -31,6 +34,7 @@ package ui
 	import ui.screens.IntegrationSettingsScreen;
 	import ui.screens.MainSettingsScreen;
 	import ui.screens.NightscoutViewScreen;
+	import ui.screens.ProfileSettingsScreen;
 	import ui.screens.Screens;
 	import ui.screens.SensorScreen;
 	import ui.screens.SensorStartScreen;
@@ -38,10 +42,15 @@ package ui
 	import ui.screens.SpeechSettingsScreen;
 	import ui.screens.TransmitterScreen;
 	import ui.screens.TransmitterSettingsScreen;
+	import ui.screens.TreatmentsManagementScreen;
+	import ui.screens.TreatmentsSettingsScreen;
 	import ui.screens.WatchSettingsScreen;
 	import ui.screens.WidgetSettingsScreen;
 	import ui.screens.data.AlarmNavigatorData;
 	import ui.screens.display.menu.MenuList;
+	
+	import utils.Constants;
+	import utils.DeviceInfo;
 	
 	public class AppInterface extends Sprite 
 	{
@@ -50,16 +59,27 @@ package ui
 		public var menu:MenuList;
 		public var drawers:Drawers;
 		public var navigator:StackScreenNavigator;
+		public var chartSettingsScreenItem:StackScreenNavigatorItem;
+		private var spikeIsActive:Boolean = false;
 		
 		public function AppInterface() 
 		{
-			super();
 			_instance = this;
+			
+			/*MonsterDebugger.initialize(this);
+			MonsterDebugger.trace(this, "Hello World!");*/
 		}
 		
 		public function start():void 
 		{
-			InterfaceController.init();
+			if (!spikeIsActive)
+			{
+				spikeIsActive = true;
+				
+				Constants.deviceModel = DeviceInfo.getDeviceType();
+	
+				SystemUtil.executeWhenApplicationIsActive( InterfaceController.init );
+			}
 		}
 		
 		public function init():void
@@ -135,8 +155,18 @@ package ui
 			transmitterSettingsScreenItem.addPopEvent(Event.COMPLETE);
 			navigator.addScreen( Screens.SETTINGS_TRANSMITTER, transmitterSettingsScreenItem );
 			
+			/* Treatments Settings Screen */
+			var treatmentsSettingsScreenItem:StackScreenNavigatorItem = new StackScreenNavigatorItem( TreatmentsSettingsScreen );
+			treatmentsSettingsScreenItem.addPopEvent(Event.COMPLETE);
+			navigator.addScreen( Screens.SETTINGS_TREATMENTS, treatmentsSettingsScreenItem );
+			
+			/* Profile Settings Screen */
+			var profileSettingsScreenItem:StackScreenNavigatorItem = new StackScreenNavigatorItem( ProfileSettingsScreen );
+			profileSettingsScreenItem.addPopEvent(Event.COMPLETE);
+			navigator.addScreen( Screens.SETTINGS_PROFILE, profileSettingsScreenItem );
+			
 			/* Chart Settings Screen */
-			var chartSettingsScreenItem:StackScreenNavigatorItem = new StackScreenNavigatorItem( ChartSettingsScreen );
+			chartSettingsScreenItem = new StackScreenNavigatorItem( ChartSettingsScreen );
 			chartSettingsScreenItem.addPopEvent(Event.COMPLETE);
 			navigator.addScreen( Screens.SETTINGS_CHART, chartSettingsScreenItem );
 			
@@ -217,6 +247,13 @@ package ui
 			disclaimerScreenItem.popTransition = Reveal.createRevealDownTransition(0.6, Transitions.EASE_IN_OUT);
 			disclaimerScreenItem.addPopEvent(Event.COMPLETE);
 			navigator.addScreen( Screens.DISCLAIMER, disclaimerScreenItem );
+			
+			/* Treatments Management Screen */
+			var treatmentsManagementScreenItem:StackScreenNavigatorItem = new StackScreenNavigatorItem( TreatmentsManagementScreen );
+			treatmentsManagementScreenItem.pushTransition = Cover.createCoverUpTransition(0.6, Transitions.EASE_IN_OUT);
+			treatmentsManagementScreenItem.popTransition = Reveal.createRevealDownTransition(0.6, Transitions.EASE_IN_OUT);
+			treatmentsManagementScreenItem.addPopEvent(Event.COMPLETE);
+			navigator.addScreen( Screens.ALL_TREATMENTS, treatmentsManagementScreenItem );
 			
 			/* Screen Navigator */
 			navigator.rootScreenID = Screens.GLUCOSE_CHART;

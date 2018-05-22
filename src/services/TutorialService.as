@@ -27,6 +27,7 @@ package services
 	import ui.popups.AlertManager;
 	
 	import utils.Constants;
+	import utils.DeviceInfo;
 	
 	[ResourceBundle("tutorialservice")]
 	[ResourceBundle("globaltranslations")]
@@ -37,7 +38,7 @@ package services
 		public static const TUTORIAL_FINISHED:String = "tutorialFinished";
 		
 		/* Objects */
-		public static var instance:TutorialService = new TutorialService();
+		private static var _instance:TutorialService;
 		
 		/* Display Objects */
 		private static var firstStepCallout:TextCallout;
@@ -50,6 +51,7 @@ package services
 		private static var eighthStepCallout:TextCallout;
 		private static var ninethStepCallout:TextCallout;
 		private static var tenthStepCallout:TextCallout;
+		private static var eleventhStepCallout:TextCallout;
 		private static var calloutLocationHelper:Sprite;
 		
 		/* Internal Variables */
@@ -64,6 +66,7 @@ package services
 		public static var eighthStepActive:Boolean = false;
 		public static var ninethStepActive:Boolean = false;
 		public static var tenthStepActive:Boolean = false;
+		public static var eleventhStepActive:Boolean = false;
 		
 		public function TutorialService()
 		{
@@ -102,6 +105,9 @@ package services
 		
 		private static function firstStep():void
 		{
+			if (Constants.mainMenuButton == null || Constants.mainMenuButton.parent == null)
+				return;
+			
 			firstStepActive = true;
 			
 			firstStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','first_step_message'), Constants.mainMenuButton, null, false);
@@ -130,6 +136,8 @@ package services
 			
 			calloutLocationHelper.x = 85;
 			calloutLocationHelper.y = 205;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			secondStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','second_step_message'), calloutLocationHelper, null, false);
 			secondStepCallout.pivotX += 5;
@@ -144,6 +152,8 @@ package services
 			
 			calloutLocationHelper.x = 25;
 			calloutLocationHelper.y = 105;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			thirdStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','third_step_message'), calloutLocationHelper, null, false);
 			
@@ -157,6 +167,8 @@ package services
 			
 			calloutLocationHelper.x = Constants.stageWidth / 2;
 			calloutLocationHelper.y = 305;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			fourthStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','fourth_step_message'), calloutLocationHelper, null, false);
 			fourthStepCallout.textRendererFactory = calloutTextRenderer;
@@ -171,6 +183,8 @@ package services
 			
 			calloutLocationHelper.x = 25;
 			calloutLocationHelper.y = 155;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			fifthStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','fifth_step_message'), calloutLocationHelper, null, false);
 			
@@ -184,11 +198,13 @@ package services
 			
 			calloutLocationHelper.x = Constants.stageWidth / 2;
 			calloutLocationHelper.y = 205;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			sixthStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','sixth_step_message'), calloutLocationHelper, null, false);
 			sixthStepCallout.textRendererFactory = calloutTextRenderer;
 			
-			Starling.juggler.delayCall( closeCallout, 18, sixthStepCallout );
+			Starling.juggler.delayCall( closeCallout, 25, sixthStepCallout );
 		}
 		
 		public static function seventhStep():void
@@ -198,6 +214,8 @@ package services
 			
 			calloutLocationHelper.x = 0;
 			calloutLocationHelper.y = Constants.stageHeight / 2;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			if (BlueToothDevice.isBluKon() || BlueToothDevice.isDexcomG5())
 			{
@@ -205,6 +223,16 @@ package services
 				Constants.noLockEnabled = true;
 				seventhStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','seventh_step_message'), calloutLocationHelper, new <String>[RelativePosition.RIGHT], false);
 				Starling.juggler.delayCall( closeCallout, 50, seventhStepCallout );
+			}
+			else if (BlueToothDevice.isMiaoMiao())
+			{
+				NativeApplication.nativeApplication.systemIdleMode = SystemIdleMode.KEEP_AWAKE;
+				Constants.noLockEnabled = true;
+				seventhStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','seventh_step_message_miaomiao'), calloutLocationHelper, new <String>[RelativePosition.RIGHT], false);
+				seventhStepCallout.textRendererFactory = calloutTextRenderer;
+				Starling.juggler.delayCall( closeCallout, 35, seventhStepCallout );
+				Starling.juggler.delayCall( onTutorialFinished, 36);
+				return;
 			}
 			else
 			{
@@ -225,6 +253,8 @@ package services
 			
 			calloutLocationHelper.x = 85;
 			calloutLocationHelper.y = 105;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			eighthStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','eighth_step_message'), calloutLocationHelper, null, false);
 			eighthStepCallout.pivotX += 5;
@@ -239,6 +269,8 @@ package services
 			
 			calloutLocationHelper.x = Constants.stageWidth - 55;
 			calloutLocationHelper.y = 265;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				calloutLocationHelper.y += 15;
 			
 			ninethStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','nineth_step_message'), calloutLocationHelper, null, false);
 			
@@ -256,24 +288,43 @@ package services
 				tenthStepCallout = TextCallout.show(ModelLocator.resourceManagerInstance.getString('tutorialservice','tenth_step_message_non_g5'), target, new <String>[RelativePosition.TOP], false);
 			
 			tenthStepCallout.textRendererFactory = calloutTextRenderer;
-			tenthStepCallout.addEventListener(Event.CLOSE, onTutorialFinished);
+			
+			if (!BlueToothDevice.isDexcomG5())
+				tenthStepCallout.addEventListener(Event.CLOSE, onTutorialFinished);
+				
 			
 			Starling.juggler.delayCall( closeCallout, 35, tenthStepCallout );
 		}
 		
-		private static function onTutorialFinished():void
+		public static function eleventhStep(e:Event = null):void
 		{
-			instance.dispatchEventWith(TUTORIAL_FINISHED);
+			tenthStepActive = false;
+			eleventhStepActive = true;
+			
+			var eleventhAlert:Alert = AlertManager.showSimpleAlert
+			(
+				ModelLocator.resourceManagerInstance.getString('globaltranslations','warning_alert_title'),
+				ModelLocator.resourceManagerInstance.getString('tutorialservice','eleventh_step_message')
+			);
+			eleventhAlert.addEventListener(Event.CLOSE, onTutorialFinished);
+		}
+		
+		private static function onTutorialFinished(e:Event = null):void
+		{
+			if (instance != null)
+				instance.dispatchEventWith(TUTORIAL_FINISHED);
 			
 			/* Clean Up */
 			tenthStepActive = false;
+			eleventhStepActive = false;
 			isActive = false;
 			
-			Starling.current.stage.removeChild(calloutLocationHelper);
-			calloutLocationHelper.dispose();
-			calloutLocationHelper = null;
-			
-			instance = null;
+			if (calloutLocationHelper != null)
+			{
+				Starling.current.stage.removeChild(calloutLocationHelper);
+				calloutLocationHelper.dispose();
+				calloutLocationHelper = null;
+			}
 		}
 		
 		/**
@@ -297,6 +348,17 @@ package services
 				callout.dispose();
 				callout = null;
 			}
+		}
+
+		/**
+		 * Getters & Setters
+		 */
+		public static function get instance():TutorialService
+		{
+			if (_instance == null)
+				_instance = new TutorialService();
+			
+			return _instance;
 		}
 	}
 }

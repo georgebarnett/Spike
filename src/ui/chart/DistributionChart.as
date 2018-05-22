@@ -10,15 +10,26 @@ package ui.chart
 	import database.BgReading;
 	import database.CommonSettings;
 	
+	import feathers.motion.Cover;
+	import feathers.motion.Reveal;
+	
 	import model.ModelLocator;
 	
+	import starling.animation.Transitions;
 	import starling.display.Quad;
 	import starling.display.Sprite;
-	import starling.display.graphics.NGon;
 	import starling.events.Event;
 	import starling.events.Touch;
 	import starling.events.TouchEvent;
 	import starling.events.TouchPhase;
+	import starling.utils.SystemUtil;
+	
+	import stats.BasicUserStats;
+	import stats.StatsManager;
+	
+	import ui.AppInterface;
+	import ui.screens.Screens;
+	import ui.shapes.SpikeNGon;
 	
 	import utils.Constants;
 	
@@ -26,22 +37,16 @@ package ui.chart
 	
 	public class DistributionChart extends Sprite
 	{
-		//Constants
-		private static const TIME_24H:int = 24 * 60 * 60 * 1000;
-		private static const TIME_30SEC:int = 30 * 1000;
-		
 		//Variables and Objects
 		private var nGons:Array;
 		private var _dataSource:Array;
 		private var pieRadius:Number;
 		private var highTreshold:Number;
 		private var lowTreshold:Number;
-		private var averageGlucose:Number;
-		private var A1C:Number;
 		private var pieTimer:Number;
 		
 		//Display Variables
-		private var numSides:int = 200;
+		private var numSides:int = 150;
 		private var lowColor:uint = 0xff0000;//red
 		private var inRangeColor:uint = 0x00ff00;//green
 		private var highColor:uint = 0xffff00;//yellow
@@ -56,6 +61,7 @@ package ui.chart
 		private var glucoseUnit:String
 		private var dummyModeActive:Boolean = false;
 		private var pieSize:Number;
+		private var piePadding:int = 4;
 		
 		//Display Objects
 		private var pieContainer:Sprite;
@@ -67,7 +73,14 @@ package ui.chart
 		private var avgGlucoseSection:PieDistributionSection;
 		private var estA1CSection:PieDistributionSection;
 		private var numReadingsSection:PieDistributionSection;
-		private var piePadding:int = 4;
+		private var pieBackground:Quad;
+		private var lowNGonSpike:SpikeNGon;
+		private var inRangeNGonSpike:SpikeNGon;
+		private var highNGonSpike:SpikeNGon;
+		private var innerNGonSpike:SpikeNGon;
+		private var middleNGonSpike:SpikeNGon;
+		private var outterNGonSpike:SpikeNGon;
+		private var statsHitArea:Quad;
 		
 		[ResourceBundle("globaltranslations")]
 		
@@ -123,6 +136,7 @@ package ui.chart
 			pieContainer.addEventListener(TouchEvent.TOUCH, onPieTouch);
 			addChild(pieContainer);
 			statsContainer = new Sprite();
+			statsContainer.touchable = false;
 			addChild(statsContainer);
 			
 			/* Activate Dummy Mode if there's no bgreadings in data source */
@@ -141,7 +155,8 @@ package ui.chart
 			var sectionColor:uint = 0x282a32; 
 			
 			/* PIE BACKGROUND */
-			var pieBackground:Quad = new Quad((pieSize * 2) + (10 - sectionsGap), pieSize * 2, sectionColor);
+			pieBackground = new Quad((pieSize * 2) + (10 - sectionsGap), pieSize * 2, sectionColor);
+			pieBackground.touchable = false;
 			addChildAt(pieBackground, 0);
 			
 			/* LOW */
@@ -161,11 +176,13 @@ package ui.chart
 			}
 			
 			lowSection = new PieDistributionSection(sectionWidth, sectionHeight, sectionColor, fontColor, lowColor);
+			lowSection.touchable = false;
 			lowSection.title.text = lowOutput + " (<=" + lowThresholdOutput + ")";
 			statsContainer.addChild(lowSection);
 			
 			/* IN RANGE */
 			inRangeSection = new PieDistributionSection(sectionWidth, sectionHeight, sectionColor, fontColor, inRangeColor);
+			inRangeSection.touchable = false;
 			inRangeSection.x = lowSection.x + lowSection.width + sectionsGap;
 			inRangeSection.title.text = inRangeOutput;
 			statsContainer.addChild(inRangeSection);
@@ -186,18 +203,21 @@ package ui.chart
 					highThresholdOutput = String(highThresholdValue);
 			}
 			highSection = new PieDistributionSection(sectionWidth, sectionHeight, sectionColor, fontColor, highColor);
+			highSection.touchable = false;
 			highSection.x = inRangeSection.x + inRangeSection.width + sectionsGap;
 			highSection.title.text = highOutput + " (>=" + highThresholdOutput + ")";;
 			statsContainer.addChild(highSection);
 			
 			/* AVG GLUCOSE */
 			avgGlucoseSection = new PieDistributionSection(sectionWidth, sectionHeight, sectionColor, fontColor);
+			avgGlucoseSection.touchable = false;
 			avgGlucoseSection.y = lowSection.y + sectionHeight + sectionsGap;
 			avgGlucoseSection.title.text = avgGlucoseOutput;
 			statsContainer.addChild(avgGlucoseSection);
 			
 			/* A1C */
 			estA1CSection = new PieDistributionSection(sectionWidth, sectionHeight, sectionColor, fontColor);
+			estA1CSection.touchable = false;
 			estA1CSection.x = avgGlucoseSection.x + avgGlucoseSection.width + sectionsGap;;
 			estA1CSection.y = avgGlucoseSection.y;
 			estA1CSection.title.text = A1COutput;
@@ -205,10 +225,19 @@ package ui.chart
 			
 			/* NUM READINGS */
 			numReadingsSection = new PieDistributionSection(sectionWidth, sectionHeight, sectionColor, fontColor);
+			numReadingsSection.touchable = false;
 			numReadingsSection.x = estA1CSection.x + estA1CSection.width + sectionsGap;;
 			numReadingsSection.y = avgGlucoseSection.y;
 			numReadingsSection.title.text = readingsOutput;
 			statsContainer.addChild(numReadingsSection);
+			
+			/* STATS HIT AREA */
+			statsHitArea = new Quad(statsContainer.width, statsContainer.height, 0xFF0000);
+			statsHitArea.x = statsContainer.x;
+			statsHitArea.y = statsContainer.y;
+			statsHitArea.alpha = 0;
+			statsHitArea.addEventListener(TouchEvent.TOUCH, onStatsTouch);
+			addChild(statsHitArea);
 		}
 		
 		public function drawChart():Boolean
@@ -216,183 +245,104 @@ package ui.chart
 			if (_dataSource != null && _dataSource.length > 0)
 				dummyModeActive = false;
 			
-			if (!BackgroundFetch.appIsInForeground())
+			if (!SystemUtil.isApplicationActive)
 				return false;
 			
-			/**
-			 * VARIABLES
-			 */
-			var high:int = 0;
-			var percentageHigh:Number;
-			var percentageHighRounded:Number;
-			var highAngle:Number;
-			var inRange:int = 0;
-			var percentageInRange:Number;
-			var percentageInRangeRounded:Number
-			var inRangeAngle:Number
-			var low:int = 0;
-			var percentageLow:Number;
-			var percentageLowRounded:Number;
-			var lowAngle:Number
-			var dataLength:int = _dataSource.length;
-			var realReadingsNumber:int = 0;
-			var totalGlucose:Number = 0;
+			var userStats:BasicUserStats = StatsManager.getBasicUserStats();
 			
-			/**
-			 * GLUCOSE DISTRIBUTION CALCULATION
-			 */
-			var glucoseValue:Number;
-			var i:int;
-			var nowTimestamp:Number = (new Date()).valueOf();
-			for (i = 0; i < dataLength; i++) 
-			{
-				if (nowTimestamp - _dataSource[i].timestamp > TIME_24H - TIME_30SEC)
-					continue;
-				
-				glucoseValue = Number(_dataSource[i].calculatedValue);
-				if(glucoseValue >= highTreshold)
-				{
-					high += 1;
-				}
-				else if (glucoseValue > lowTreshold && glucoseValue < highTreshold)
-				{
-					inRange += 1;
-				}
-				else if (glucoseValue <= lowTreshold)
-				{
-					low += 1;
-				}
-				totalGlucose += glucoseValue;
-				
-				realReadingsNumber++;
-			}
-			
-			//Glucose Distribution Percentages
-			percentageHigh = (high * 100) / dataLength;
-			percentageHighRounded = (( percentageHigh * 10 + 0.5)  >> 0) / 10;
-			
-			percentageInRange = (inRange * 100) / dataLength;
-			percentageInRangeRounded = (( percentageInRange * 10 + 0.5)  >> 0) / 10;
-			
-			var preLow:Number = Math.round((low * 100) / dataLength) * 10 / 10;
-			if ( preLow != 0 && !isNaN(preLow))
-			{
-				percentageLow = 100 - percentageInRange - percentageHigh;
-				percentageLowRounded = Math.round ((100 - percentageInRangeRounded - percentageHighRounded) * 10) / 10;
-			}
-			else
-			{
-				percentageLow = 0;
-				percentageLowRounded = 0;
-			}
+			//If there's no good readings then activate dummy mode.
+			if (userStats.numReadingsDay == 0)
+				dummyModeActive = true;
 			
 			//Angles
-			highAngle = (percentageHigh * 360) / 100;
-			inRangeAngle = (percentageInRange * 360) / 100;
-			lowAngle = (percentageLow * 360) / 100;
-			
-			/**
-			 * GRAPH DRAWING
-			 */
+			var highAngle:Number = (userStats.percentageHigh * 360) / 100;
+			var inRangeAngle:Number = (userStats.percentageInRange * 360) / 100;
+			var lowAngle:Number = (userStats.percentageLow * 360) / 100;
 			
 			if (pieGraphicContainer != null)
-				pieContainer.removeChild(pieGraphicContainer);
+				pieGraphicContainer.removeFromParent(true);
 			
 			pieGraphicContainer = new Sprite();
 			
 			//LOW PORTION
 			if (!dummyModeActive)
 			{
-				var lowNGon:NGon = new NGon(pieRadius, numSides, 0, 0, lowAngle);
-				lowNGon.color = lowColor;
-				lowNGon.x = lowNGon.y = pieRadius;
-				nGons.push(lowNGon);
-				pieGraphicContainer.addChild(lowNGon);
+				if (lowNGonSpike != null) lowNGonSpike.removeFromParent(true);
+				lowNGonSpike = new SpikeNGon(pieRadius, numSides, 0, lowAngle, lowColor);
+				lowNGonSpike.x = lowNGonSpike.y = pieRadius;
+				nGons.push(lowNGonSpike);
+				pieGraphicContainer.addChild(lowNGonSpike);
 			}
 			//Legend
-			lowSection.message.text = !dummyModeActive ? percentageLowRounded + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
-				
+			lowSection.message.text = !dummyModeActive ? userStats.percentageLowRounded + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
 			
 			//IN RANGE PORTION
 			//Graphics
 			if (!dummyModeActive)
 			{
-				var inRangeNGon:NGon = new NGon(pieRadius, numSides, 0, lowAngle, lowAngle + inRangeAngle);
-				inRangeNGon.color = inRangeColor;
-				inRangeNGon.x = inRangeNGon.y = pieRadius;
-				nGons.push(inRangeNGon);
-				pieGraphicContainer.addChild(inRangeNGon);
+				if (inRangeNGonSpike != null) inRangeNGonSpike.removeFromParent(true);
+				inRangeNGonSpike = new SpikeNGon(pieRadius, numSides, lowAngle, lowAngle + inRangeAngle, inRangeColor);
+				inRangeNGonSpike.x = inRangeNGonSpike.y = pieRadius;
+				nGons.push(inRangeNGonSpike);
+				pieGraphicContainer.addChild(inRangeNGonSpike);
 			}
 			//Legend
-			inRangeSection.message.text = !dummyModeActive ? percentageInRangeRounded + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
+			inRangeSection.message.text = !dummyModeActive ? userStats.percentageInRangeRounded + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
 			
 			//HIGH PORTION
 			//Graphics
 			if (!dummyModeActive)
 			{
-				var highNGon:NGon = new NGon(pieRadius, numSides, 0, lowAngle + inRangeAngle, lowAngle + inRangeAngle + highAngle);
-				highNGon.color = highColor;
-				highNGon.x = highNGon.y = pieRadius;
-				nGons.push(highNGon);
-				pieGraphicContainer.addChild(highNGon);
+				if (highNGonSpike != null) highNGonSpike.removeFromParent(true);
+				highNGonSpike = new SpikeNGon(pieRadius, numSides, lowAngle + inRangeAngle, lowAngle + inRangeAngle + highAngle, highColor);
+				highNGonSpike.x = highNGonSpike.y = pieRadius;
+				nGons.push(highNGonSpike);
+				pieGraphicContainer.addChild(highNGonSpike);
 			}
 			//Legend
-			highSection.message.text = !dummyModeActive ? percentageHighRounded + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
+			highSection.message.text = !dummyModeActive ? userStats.percentageHighRounded + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
 			
 			//DUMMY NGON
 			if (dummyModeActive)
 			{
-				var innerNGon:NGon = new NGon(pieRadius, numSides, 0, 0, 360);
-				innerNGon.color = lowColor;
-				innerNGon.x = innerNGon.y = pieRadius;
-				nGons.push(innerNGon);
-				pieGraphicContainer.addChild(innerNGon);
+				if (outterNGonSpike != null) outterNGonSpike.removeFromParent(true);
+				outterNGonSpike = new SpikeNGon(pieRadius, numSides, 0, 360, highColor);
+				outterNGonSpike.x = outterNGonSpike.y = pieRadius;
+				nGons.push(outterNGonSpike);
+				pieGraphicContainer.addChild(outterNGonSpike);
 				
-				var middleNGon:NGon = new NGon(pieRadius, numSides, pieRadius/3, 0, 360);
-				middleNGon.color = inRangeColor;
-				middleNGon.x = middleNGon.y = pieRadius;
-				nGons.push(middleNGon);
-				pieGraphicContainer.addChild(middleNGon);
+				if (middleNGonSpike != null) middleNGonSpike.removeFromParent(true);
+				middleNGonSpike = new SpikeNGon((pieRadius / 3) * 2, numSides, 0, 360, inRangeColor);
+				middleNGonSpike.x = middleNGonSpike.y = pieRadius;
+				nGons.push(middleNGonSpike);
+				pieGraphicContainer.addChild(middleNGonSpike);
 				
-				var outterNGon:NGon = new NGon(pieRadius, numSides, (pieRadius/3) * 2, 0, 360);
-				outterNGon.color = highColor;
-				outterNGon.x = outterNGon.y = pieRadius;
-				nGons.push(outterNGon);
-				pieGraphicContainer.addChild(outterNGon);
+				if (innerNGonSpike != null) innerNGonSpike.removeFromParent(true);
+				innerNGonSpike = new SpikeNGon(pieRadius / 3, numSides, 0, 360, lowColor);
+				innerNGonSpike.x = innerNGonSpike.y = pieRadius;
+				nGons.push(innerNGonSpike);
+				pieGraphicContainer.addChild(innerNGonSpike);
 			}
 			
-			/* Add pie to display list */
+			//Add pie to display list
 			pieContainer.addChild(pieGraphicContainer);
 			
-			//Calculate Average Glucose & A1C
-			averageGlucose = (( (totalGlucose / dataLength) * 10 + 0.5)  >> 0) / 10;
-			var averageGlucoseValue:Number = averageGlucose;
-			if (glucoseUnit != "mg/dL")
-				averageGlucoseValue = Math.round(((BgReading.mgdlToMmol((averageGlucoseValue))) * 10)) / 10;
-			
+			//Average glucose
 			var averageGlucoseValueOutput:String
 			if (glucoseUnit == "mg/dL")
-				averageGlucoseValueOutput = String(averageGlucoseValue);
+				averageGlucoseValueOutput = String(userStats.averageGlucose);
 			else
 			{
-				if ( averageGlucoseValue % 1 == 0)
-					averageGlucoseValueOutput = String(averageGlucoseValue) + ".0";
+				if ( userStats.averageGlucose % 1 == 0)
+					averageGlucoseValueOutput = String(userStats.averageGlucose) + ".0";
 				else
-					averageGlucoseValueOutput = String(averageGlucoseValue);
+					averageGlucoseValueOutput = String(userStats.averageGlucose);
 			}
 			
-			if (!dummyModeActive)
-				A1C = (( ((46.7 + averageGlucose) / 28.7) * 10 + 0.5)  >> 0) / 10;
-			else
-				A1C = 0;
-			
-			//Calculate readings percentage
-			var percentageReadings:Number = ((((realReadingsNumber * 100) / 288) * 10 + 0.5)  >> 0) / 10;
-			
 			//Populate Stats
-			numReadingsSection.message.text = !dummyModeActive ? realReadingsNumber + " (" + percentageReadings + "%)" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
+			numReadingsSection.message.text = !dummyModeActive ? userStats.numReadingsDay + " (" + userStats.captureRate + "%)" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
 			avgGlucoseSection.message.text = !dummyModeActive ? averageGlucoseValueOutput + " " + glucoseUnit : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
-			estA1CSection.message.text = !dummyModeActive ? A1C + "%" : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
+			estA1CSection.message.text = !dummyModeActive ? userStats.a1c + (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PIE_CHART_A1C_IFCC_ON) != "true" ? "%" : " mmol/mol") : ModelLocator.resourceManagerInstance.getString('globaltranslations','not_available');
 			
 			return true;
 		}
@@ -432,6 +382,9 @@ package ui.chart
 					
 					//Activate Keep Awake
 					NativeApplication.nativeApplication.systemIdleMode = SystemIdleMode.KEEP_AWAKE;
+					
+					//Push Fullscreen View
+					AppInterface.instance.navigator.pushScreen( Screens.FULLSCREEN_GLUCOSE );
 				}
 				else if (Constants.noLockEnabled)
 				{
@@ -446,73 +399,181 @@ package ui.chart
 			}
 		}
 		
+		private function onStatsTouch (e:TouchEvent):void
+		{
+			var touch:Touch = e.getTouch(stage);
+			if(touch != null && touch.phase == TouchPhase.BEGAN)
+			{
+				pieTimer = getTimer();
+				addEventListener(Event.ENTER_FRAME, onStatsHold);
+			}
+			
+			if(touch != null && touch.phase == TouchPhase.ENDED)
+			{
+				pieTimer = Number.NaN;
+				removeEventListener(Event.ENTER_FRAME, onStatsHold);
+			}
+		}
+		
+		private function onStatsHold(e:Event):void
+		{
+			if (isNaN(pieTimer))
+				return;
+			
+			if (getTimer() - pieTimer > 1000)
+			{
+				pieTimer = Number.NaN;
+				removeEventListener(Event.ENTER_FRAME, onStatsHold);
+				
+				//Push Chart Settings Screen
+				AppInterface.instance.chartSettingsScreenItem.pushTransition = Cover.createCoverUpTransition(0.6, Transitions.EASE_IN_OUT);
+				AppInterface.instance.chartSettingsScreenItem.popTransition = Reveal.createRevealDownTransition(0.6, Transitions.EASE_IN_OUT);
+				AppInterface.instance.navigator.pushScreen( Screens.SETTINGS_CHART );
+			}
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{	
+			//Event Listeners
+			removeEventListener(Event.ENTER_FRAME, onPieHold);
+			
+		
 			/* Dispose Display Objects */
+			for (var i:int = 0; i < nGons.length; i++) 
+			{
+				var nGon:SpikeNGon = nGons[i] as SpikeNGon;
+				if (nGon != null)
+				{
+					nGon.removeFromParent();
+					nGon.dispose();
+					nGon = null;
+				}
+			}
+			nGons.length = 0;
+			nGons = null
+			
+			if (lowNGonSpike != null)
+			{
+				lowNGonSpike.removeFromParent();
+				lowNGonSpike.dispose();
+				lowNGonSpike = null;
+			}
+			
+			if (inRangeNGonSpike != null)
+			{
+				inRangeNGonSpike.removeFromParent();
+				inRangeNGonSpike.dispose();
+				inRangeNGonSpike = null;
+			}
+			
+			if (highNGonSpike != null)
+			{
+				highNGonSpike.removeFromParent();
+				highNGonSpike.dispose();
+				highNGonSpike = null;
+			}
+			
+			if (innerNGonSpike != null)
+			{
+				innerNGonSpike.removeFromParent();
+				innerNGonSpike.dispose();
+				innerNGonSpike = null;
+			}
+			
+			if (middleNGonSpike != null)
+			{
+				middleNGonSpike.removeFromParent();
+				middleNGonSpike.dispose();
+				middleNGonSpike = null;
+			}
+			
+			if (outterNGonSpike != null)
+			{
+				outterNGonSpike.removeFromParent();
+				outterNGonSpike.dispose();
+				outterNGonSpike = null;
+			}
 			
 			if (lowSection != null)
 			{
-				statsContainer.removeChild(lowSection);
+				lowSection.removeFromParent();
 				lowSection.dispose();
 				lowSection = null;
 			}
 			
 			if (inRangeSection != null)
 			{
-				statsContainer.removeChild(inRangeSection);
+				inRangeSection.removeFromParent();
 				inRangeSection.dispose();
 				inRangeSection = null;
 			}
 			
 			if (highSection != null)
 			{
-				statsContainer.removeChild(highSection);
+				highSection.removeFromParent();
 				highSection.dispose();
 				highSection = null;
 			}
 			
 			if (avgGlucoseSection != null)
 			{
-				statsContainer.removeChild(avgGlucoseSection);
+				avgGlucoseSection.removeFromParent();
 				avgGlucoseSection.dispose();
 				avgGlucoseSection = null;
 			}
 			
 			if (estA1CSection != null)
 			{
-				statsContainer.removeChild(estA1CSection);
+				estA1CSection.removeFromParent();
 				estA1CSection.dispose();
 				estA1CSection = null;
 			}
 			
 			if (numReadingsSection != null)
 			{
-				statsContainer.removeChild(numReadingsSection);
+				numReadingsSection.removeFromParent();
 				numReadingsSection.dispose();
 				numReadingsSection = null;
 			}
 			
+			if (pieBackground != null)
+			{
+				pieBackground.removeFromParent();
+				pieBackground.dispose();
+				pieBackground = null;
+			}
+			
 			if (statsContainer != null)
 			{
-				removeChild(statsContainer);
+				statsContainer.removeFromParent();
 				statsContainer.dispose();
 				statsContainer = null;
 			}
 			
 			if (pieContainer != null)
 			{
-				removeChild(pieContainer);
+				pieContainer.removeEventListener(TouchEvent.TOUCH, onPieTouch);
+				pieContainer.removeFromParent();
 				pieContainer.dispose();
 				pieContainer = null;
 			}
 			
 			if (pieGraphicContainer != null)
 			{
+				pieGraphicContainer.removeFromParent();
 				pieGraphicContainer.dispose();
 				pieGraphicContainer = null;
+			}
+			
+			if (statsHitArea != null)
+			{
+				statsHitArea.addEventListener(TouchEvent.TOUCH, onStatsTouch);
+				statsHitArea.removeFromParent();
+				statsHitArea.dispose();
+				statsHitArea = null;
 			}
 			
 			System.pauseForGCIfCollectionImminent(0);

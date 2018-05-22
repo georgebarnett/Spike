@@ -1,17 +1,15 @@
 package ui.screens.display.sensor
 {
 	import flash.system.Capabilities;
-	import flash.utils.Timer;
 	import flash.utils.clearInterval;
 	import flash.utils.setInterval;
-	
-	import mx.collections.ArrayCollection;
 	
 	import spark.formatters.DateTimeFormatter;
 	
 	import database.BlueToothDevice;
 	import database.Calibration;
 	import database.CommonSettings;
+	import database.Database;
 	import database.Sensor;
 	
 	import feathers.controls.Alert;
@@ -32,7 +30,13 @@ package ui.screens.display.sensor
 	import services.NightscoutService;
 	import services.NotificationService;
 	
+	import starling.core.Starling;
+	import starling.display.DisplayObject;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
+	import starling.utils.SystemUtil;
+	
+	import treatments.TreatmentsManager;
 	
 	import ui.AppInterface;
 	import ui.popups.AlertManager;
@@ -51,6 +55,7 @@ package ui.screens.display.sensor
 	{
 		/* Constants */
 		private const TIME_2_HOURS:int = 2 * 60 * 60 * 1000;
+		private const TIME_1_HOUR:int = 1 * 60 * 60 * 1000;
 		
 		/* Display Objects */
 		private var actionButton:Button;
@@ -71,6 +76,7 @@ package ui.screens.display.sensor
 		private var numberOfCalibrations:String;
 		private var inSensorCountdown:Boolean = false;
 		private var intervalID:int = -1;
+		private var warmupTime:Number;
 		
 		public function SensorStartStopList()
 		{
@@ -80,6 +86,8 @@ package ui.screens.display.sensor
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupInitialState();
@@ -109,6 +117,9 @@ package ui.screens.display.sensor
 		
 		private function setupInitialState():void
 		{
+			/* Warmup Time */
+			warmupTime = BlueToothDevice.isTypeLimitter() ? TIME_1_HOUR : TIME_2_HOURS;
+			
 			/* Sensor Start Date */
 			if (Sensor.getActiveSensor() != null)
 			{
@@ -120,18 +131,22 @@ package ui.screens.display.sensor
 				var sensorDays:String;
 				var sensorHours:String;
 				
-				if (BlueToothDevice.isBluKon() || BlueToothDevice.isBlueReader() || BlueToothDevice.isTransmiter_PL()) 
+				if (BlueToothDevice.isBluKon() || BlueToothDevice.isTransmiter_PL() || BlueToothDevice.isMiaoMiao()) 
 				{
 					var sensorAgeInMinutes:String = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_FSL_SENSOR_AGE);
 					
 					if (sensorAgeInMinutes == "0") 
 						sensorAgeValue = ModelLocator.resourceManagerInstance.getString('sensorscreen', "sensor_age_not_applicable");
+					else if ((new Number(sensorAgeInMinutes)) > 14.5 * 24 * 60) 
+					{
+						sensorAgeValue = ModelLocator.resourceManagerInstance.getString('sensorscreen','sensor_expired');
+					}
 					else 
 					{
 						sensorDays = TimeSpan.fromMinutes(Number(sensorAgeInMinutes)).days.toString();
 						sensorHours = TimeSpan.fromMinutes(Number(sensorAgeInMinutes)).hours.toString();
 						
-						sensorAgeValue = sensorDays + "d" + sensorHours + "h";
+						sensorAgeValue = sensorDays + "d " + sensorHours + "h";
 					}
 				}
 				else
@@ -140,17 +155,17 @@ package ui.screens.display.sensor
 					sensorDays = TimeSpan.fromDates(sensorStartDate, nowDate).days.toString();
 					sensorHours = TimeSpan.fromDates(sensorStartDate, nowDate).hours.toString();
 					
-					if (sensorDays.length == 1)
+					/*if (sensorDays.length == 1)
 						sensorDays = "0" + sensorDays;
 					if (sensorHours.length == 1)
-						sensorHours = "0" + sensorHours;
+						sensorHours = "0" + sensorHours;*/
 					
-					sensorAgeValue = sensorDays + "d" + sensorHours + "h";
+					sensorAgeValue = sensorDays + "d " + sensorHours + "h";
 				}
 				
 				//Calculate number of calibrations
-				var allCalibrations:ArrayCollection = Calibration.allForSensor();
-				numberOfCalibrations = String(allCalibrations.length);
+				var allCalibrations:Array = Calibration.allForSensor();
+				numberOfCalibrations = String(allCalibrations.length > 0 ? allCalibrations.length - 1 : 0); //Compatibility with new method of only one initial calibration
 				
 				//Calculate Last Calibration Time
 				if (allCalibrations.length > 0)
@@ -162,7 +177,7 @@ package ui.screens.display.sensor
 					lastCalibrationDateValue = ModelLocator.resourceManagerInstance.getString('sensorscreen', "sensor_age_not_applicable");
 				
 				//Sensor countdown
-				if (new Date().valueOf() - Sensor.getActiveSensor().startedAt < TIME_2_HOURS)
+				if (new Date().valueOf() - Sensor.getActiveSensor().startedAt < warmupTime)
 					inSensorCountdown = true;
 			}
 			else
@@ -196,7 +211,7 @@ package ui.screens.display.sensor
 				var sensor:Sensor = Sensor.getActiveSensor();
 				if (sensor != null)
 				{
-					var sensorReady:Number = sensor.startedAt + TIME_2_HOURS;
+					var sensorReady:Number = sensor.startedAt + warmupTime;
 					var now:Number = new Date().valueOf();
 					
 					if (now < sensorReady)
@@ -281,7 +296,8 @@ package ui.screens.display.sensor
 			sensorChildrenContent.push({ label: ModelLocator.resourceManagerInstance.getString('sensorscreen','sensor_age_lavel'), accessory: sensorAgeLabel });
 			if (inSensorCountdown)
 				sensorChildrenContent.push({ label: ModelLocator.resourceManagerInstance.getString('sensorscreen','warmup_countdown'), accessory: sensorCountdownLabel });
-			sensorChildrenContent.push({ label: "", accessory: actionButton });
+			if (!BlueToothDevice.knowsFSLAge() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE) != "")
+				sensorChildrenContent.push({ label: "", accessory: actionButton });
 			
 			dataProvider = new HierarchicalCollection(
 				[
@@ -310,7 +326,7 @@ package ui.screens.display.sensor
 				return;
 			}
 			
-			var sensorReady:Number = sensor.startedAt + TIME_2_HOURS;
+			var sensorReady:Number = sensor.startedAt + warmupTime;
 			var now:Number = new Date().valueOf();
 			
 			if (now >= sensorReady)
@@ -345,10 +361,8 @@ package ui.screens.display.sensor
 					{ label: ModelLocator.resourceManagerInstance.getString('globaltranslations','stop_alert_button_label'), triggered: onStopSensorTriggered }
 				]
 			);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-			{
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				alert.maxWidth = 270;
-			}
 		}
 		
 		private function onStopSensorTriggered(e:Event):void
@@ -391,6 +405,15 @@ package ui.screens.display.sensor
 			
 			function deleteAllCalibrations(e:Event):void
 			{
+				//Delete from treatments
+				var allCalibrations:Array = Calibration.allForSensor();
+				for (var i:int = 0; i < allCalibrations.length; i++) 
+				{
+					var calibration:Calibration = allCalibrations[i] as Calibration;
+					TreatmentsManager.deleteInternalCalibration(calibration.timestamp);
+				}
+				
+				//Restart the sensor (this will reset all current calibrations)
 				var currentSensorTimestamp:Number = Sensor.getActiveSensor().startedAt;
 				Sensor.stopSensor();
 				NightscoutService.uploadSensorStart = false;
@@ -419,10 +442,22 @@ package ui.screens.display.sensor
 			
 			function deleteLastCalibration(e:Event):void
 			{
-				Calibration.clearLastCalibration();
+				var lastCalibration:Calibration = Calibration.last();
+				Database.deleteCalibrationSynchronous(lastCalibration);
+				TreatmentsManager.deleteInternalCalibration(lastCalibration.timestamp);
 				setupInitialState();
 				setupContent();
 			}
+		}
+		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			SystemUtil.executeWhenApplicationIsActive( AppInterface.instance.navigator.replaceScreen, Screens.SENSOR_STATUS, noTransition );
+			
+			function noTransition( oldScreen:DisplayObject, newScreen:DisplayObject, completeCallback:Function ):void
+			{
+				completeCallback();
+			};
 		}
 		
 		/**
@@ -435,7 +470,7 @@ package ui.screens.display.sensor
 			if (Number(numberOfCalibrations) > 0 && deleteAllCalibrationsButton != null)
 				deleteAllCalibrationsButton.isEnabled = true;
 			
-			if (Number(numberOfCalibrations) > 2 && deleteLastCalibrationButton != null)
+			if (Number(numberOfCalibrations) > 1 && deleteLastCalibrationButton != null)
 				deleteLastCalibrationButton.isEnabled = true;
 		}
 		
@@ -443,29 +478,35 @@ package ui.screens.display.sensor
 		{
 			clearInterval(intervalID);
 			
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			/* Dispose Controls */
 			if(actionButton != null)
 			{
 				actionButton.removeEventListener(Event.TRIGGERED, onStopSensor);
 				actionButton.removeEventListener(Event.TRIGGERED, onStartSensor);
+				actionButton.removeFromParent();
 				actionButton.dispose();
 				actionButton = null;
 			}
 			
 			if(sensorStartDateLabel != null)
 			{
+				sensorStartDateLabel.removeFromParent();
 				sensorStartDateLabel.dispose();
 				sensorStartDateLabel = null;
 			}
 			
 			if(totalCalibrationsLabel != null)
 			{
+				totalCalibrationsLabel.removeFromParent();
 				totalCalibrationsLabel.dispose();
 				totalCalibrationsLabel = null;
 			}
 			
 			if(lastCalibrationDateLabel != null)
 			{
+				lastCalibrationDateLabel.removeFromParent();
 				lastCalibrationDateLabel.dispose();
 				lastCalibrationDateLabel = null;
 			}
@@ -473,7 +514,7 @@ package ui.screens.display.sensor
 			if(deleteAllCalibrationsButton != null)
 			{
 				deleteAllCalibrationsButton.removeEventListener(Event.TRIGGERED, onDeleteAllCalibrations);
-				calibrationActionsContainer.removeChild(deleteAllCalibrationsButton);
+				deleteAllCalibrationsButton.removeFromParent();
 				deleteAllCalibrationsButton.dispose();
 				deleteAllCalibrationsButton = null;
 			}
@@ -481,19 +522,21 @@ package ui.screens.display.sensor
 			if(deleteLastCalibrationButton != null)
 			{
 				deleteLastCalibrationButton.removeEventListener(Event.TRIGGERED, onDeleteLastCalibration);
-				calibrationActionsContainer.removeChild(deleteLastCalibrationButton);
+				deleteLastCalibrationButton.removeFromParent();
 				deleteLastCalibrationButton.dispose();
 				deleteLastCalibrationButton = null;
 			}
 			
 			if(calibrationActionsContainer != null)
 			{
+				calibrationActionsContainer.removeFromParent();
 				calibrationActionsContainer.dispose();
 				calibrationActionsContainer = null;
 			}
 			
 			if(sensorCountdownLabel != null)
 			{
+				sensorCountdownLabel.removeFromParent();
 				sensorCountdownLabel.dispose();
 				sensorCountdownLabel = null;
 			}

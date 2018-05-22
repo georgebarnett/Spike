@@ -5,6 +5,7 @@ package ui.screens.display.settings.share
 	
 	import feathers.controls.Button;
 	import feathers.controls.Callout;
+	import feathers.controls.Label;
 	import feathers.controls.LayoutGroup;
 	import feathers.controls.List;
 	import feathers.controls.PickerList;
@@ -19,6 +20,7 @@ package ui.screens.display.settings.share
 	import feathers.events.FeathersEventType;
 	import feathers.layout.HorizontalAlign;
 	import feathers.layout.HorizontalLayout;
+	import feathers.layout.VerticalLayout;
 	import feathers.themes.BaseMaterialDeepGreyAmberMobileTheme;
 	
 	import model.ModelLocator;
@@ -28,6 +30,8 @@ package ui.screens.display.settings.share
 	import starling.core.Starling;
 	import starling.display.Sprite;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
+	import starling.utils.SystemUtil;
 	
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
@@ -54,6 +58,7 @@ package ui.screens.display.settings.share
 		private var followerManager:DexcomShareFollowersList;
 		private var followerManagerCallout:Callout;
 		private var followerManagerContainer:ScrollContainer;
+		private var nonDexcomInstructions:Label;
 		
 		/* Properties */
 		public var needsSave:Boolean = false;
@@ -71,6 +76,8 @@ package ui.screens.display.settings.share
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupIntitialState();
@@ -115,17 +122,17 @@ package ui.screens.display.settings.share
 			dsToggle.addEventListener( Event.CHANGE, onDexcomShareOnOff );
 			
 			//Username
-			dsUsername = LayoutFactory.createTextInput(false, false, 140, HorizontalAlign.RIGHT);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				dsUsername.width = 120;
+			dsUsername = LayoutFactory.createTextInput(false, false, Constants.deviceModel == DeviceInfo.IPHONE_X ? 120 : 140, HorizontalAlign.RIGHT);
+			if (!Constants.isPortrait)
+				dsUsername.width += 100;
 			dsUsername.text = selectedUsername;
 			dsUsername.addEventListener( FeathersEventType.ENTER, onTextInputEnter );
 			dsUsername.addEventListener(Event.CHANGE, onTextInputChanged);
 			
 			//Password
-			dsPassword = LayoutFactory.createTextInput(true, false, 140, HorizontalAlign.RIGHT);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				dsPassword.width = 120;
+			dsPassword = LayoutFactory.createTextInput(true, false, Constants.deviceModel == DeviceInfo.IPHONE_X ? 120 : 140, HorizontalAlign.RIGHT);
+			if (!Constants.isPortrait)
+				dsPassword.width += 100;
 			dsPassword.text = selectedPassword;
 			dsPassword.addEventListener( FeathersEventType.ENTER, onTextInputEnter );
 			dsPassword.addEventListener(Event.CHANGE, onTextInputChanged);
@@ -133,9 +140,9 @@ package ui.screens.display.settings.share
 			//Serial
 			if (!BlueToothDevice.isDexcomG5())
 			{
-				dsSerial = LayoutFactory.createTextInput(false, false, 140, HorizontalAlign.RIGHT);
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-					dsSerial.width = 120;
+				dsSerial = LayoutFactory.createTextInput(false, false, Constants.deviceModel == DeviceInfo.IPHONE_X ? 120 : 140, HorizontalAlign.RIGHT);
+				if (!Constants.isPortrait)
+					dsSerial.width += 100;
 				dsSerial.text = selectedDexcomShareSerialNumber;
 				dsSerial.addEventListener( FeathersEventType.ENTER, onTextInputEnter );
 				dsSerial.addEventListener(Event.CHANGE, onTextInputChanged);
@@ -187,6 +194,12 @@ package ui.screens.display.settings.share
 			dsLogin = LayoutFactory.createButton(ModelLocator.resourceManagerInstance.getString('sharesettingsscreen','login_button_label'));
 			dsLogin.addEventListener( Event.TRIGGERED, onDexcomShareLogin );
 			actionsContainer.addChild(dsLogin);
+			
+			//Non dexcom instructions
+			nonDexcomInstructions = LayoutFactory.createLabel(ModelLocator.resourceManagerInstance.getString('sharesettingsscreen','non_dexcom_transmitter_instructions'), HorizontalAlign.JUSTIFY);
+			nonDexcomInstructions.wordWrap = true;
+			nonDexcomInstructions.width = width - 10;
+			nonDexcomInstructions.paddingTop = nonDexcomInstructions.paddingBottom = 10;
 			
 			//Set Item Renderer
 			itemRendererFactory = function():IListItemRenderer
@@ -249,6 +262,8 @@ package ui.screens.display.settings.share
 					listDataProviderItems.push({ label: ModelLocator.resourceManagerInstance.getString('sharesettingsscreen','serial_label'), accessory: dsSerial });
 				listDataProviderItems.push({ label: ModelLocator.resourceManagerInstance.getString('sharesettingsscreen','dexcom_share_server_label'), accessory: dsServer });
 				listDataProviderItems.push({ label: "", accessory: actionsContainer });
+				if (!BlueToothDevice.isDexcomG4() && !BlueToothDevice.isDexcomG5())
+					listDataProviderItems.push({ label: "", accessory: nonDexcomInstructions });
 				
 				dataProvider = new ArrayCollection(listDataProviderItems);
 			}
@@ -368,11 +383,56 @@ package ui.screens.display.settings.share
 			}
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+			
+			if (nonDexcomInstructions != null)
+				nonDexcomInstructions.width = width - 10;
+			
+			if (dsUsername != null)
+			{
+				SystemUtil.executeWhenApplicationIsActive( dsUsername.clearFocus );
+				dsUsername.width = Constants.deviceModel == DeviceInfo.IPHONE_X ? 120 : 140;
+				if (!Constants.isPortrait)
+					dsUsername.width += 100;
+			}
+			
+			if (dsPassword != null)
+			{
+				SystemUtil.executeWhenApplicationIsActive( dsPassword.clearFocus );
+				dsPassword.width = Constants.deviceModel == DeviceInfo.IPHONE_X ? 120 : 140;
+				if (!Constants.isPortrait)
+					dsPassword.width += 100;
+			}
+			
+			if (dsSerial != null)
+			{
+				SystemUtil.executeWhenApplicationIsActive( dsSerial.clearFocus );
+				dsSerial.width = Constants.deviceModel == DeviceInfo.IPHONE_X ? 120 : 140;
+				if (!Constants.isPortrait)
+					dsSerial.width += 100;
+			}
+			
+			if (positionHelper != null)
+				positionHelper.x = Constants.stageWidth / 2;
+		}
+		
 		/**
 		 * Utility
 		 */
+		override protected function draw():void
+		{
+			if ((layout as VerticalLayout) != null)
+				(layout as VerticalLayout).hasVariableItemDimensions = true;
+			
+			super.draw();
+		}
+		
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if(dsUsername != null)
 			{
 				dsUsername.removeEventListener( FeathersEventType.ENTER, onTextInputEnter );
@@ -449,6 +509,12 @@ package ui.screens.display.settings.share
 			{
 				followerManagerCallout.dispose();
 				followerManagerCallout = null;
+			}
+			
+			if (nonDexcomInstructions != null)
+			{
+				nonDexcomInstructions.dispose();
+				nonDexcomInstructions = null;
 			}
 			
 			super.dispose();

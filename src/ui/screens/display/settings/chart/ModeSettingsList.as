@@ -15,7 +15,9 @@ package ui.screens.display.settings.chart
 	
 	import model.ModelLocator;
 	
+	import starling.core.Starling;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.screens.display.LayoutFactory;
 	
@@ -43,6 +45,8 @@ package ui.screens.display.settings.chart
 		public function ModeSettingsList()
 		{
 			super();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupInitialContent();
@@ -107,12 +111,14 @@ package ui.screens.display.settings.chart
 			scaleFormatPicker.addEventListener(Event.CHANGE, onScaleFormatChange);
 			
 			/* Value Numeric Steppers */
-			chartMaxValueStepper = LayoutFactory.createNumericStepper(0, 400, chartMaxValue);
+			var maxConstrain:Number;
+			glucoseUnits == "mgdl" ? maxConstrain = 800 : maxConstrain = Math.round(((BgReading.mgdlToMmol((800))) * 10)) / 10;
+			chartMaxValueStepper = LayoutFactory.createNumericStepper(0, maxConstrain, chartMaxValue);
 			if (glucoseUnits != "mgdl")
 				chartMaxValueStepper.step = 0.1;
 			chartMaxValueStepper.addEventListener(Event.CHANGE, onSettingsChanged);
 			
-			chartMinValueStepper = LayoutFactory.createNumericStepper(0, 400, chartMinValue);
+			chartMinValueStepper = LayoutFactory.createNumericStepper(0, maxConstrain, chartMinValue);
 			if (glucoseUnits != "mgdl")
 				chartMinValueStepper.step = 0.1;
 			chartMinValueStepper.addEventListener(Event.CHANGE, onSettingsChanged);
@@ -211,11 +217,18 @@ package ui.screens.display.settings.chart
 			needsSave = true;
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if (scaleFormatPicker != null)
 			{
 				scaleFormatPicker.removeEventListener(Event.CHANGE, onScaleFormatChange);

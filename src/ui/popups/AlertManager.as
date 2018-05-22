@@ -21,6 +21,7 @@ package ui.popups
 	import starling.core.Starling;
 	import starling.display.DisplayObject;
 	import starling.events.Event;
+	import starling.utils.SystemUtil;
 	
 	import utils.Constants;
 	import utils.DeviceInfo;
@@ -57,7 +58,7 @@ package ui.popups
 		public static function showSimpleAlert (alertTitle:String, alertMessage:String, timeoutDuration:Number = Number.NaN, eventHandlerFunct:Function = null, textAlign:String = HorizontalAlign.JUSTIFY, icon:DisplayObject = null):Alert
 		{	
 			var alert:Alert = processAlert(alertTitle, alertMessage, timeoutDuration, eventHandlerFunct, null, textAlign, icon);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				alert.maxWidth = 270;
 			return alert;
 		}
@@ -65,7 +66,7 @@ package ui.popups
 		public static function showActionAlert (alertTitle:String, alertMessage:String, timeoutDuration:Number = Number.NaN, buttonGroup:Array = null, textAlign:String = HorizontalAlign.JUSTIFY, icon:DisplayObject = null):Alert
 		{
 			var alert:Alert = processAlert(alertTitle, alertMessage, timeoutDuration, null, buttonGroup, textAlign, icon);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				alert.maxWidth = 270;
 			return alert;
 		}
@@ -76,7 +77,7 @@ package ui.popups
 		private static function processAlert(alertTitle:String, alertMessage:String, timeoutDuration:Number = Number.NaN, eventHandlerFunct:Function = null, buttonGroup:Array = null, textAlign:String = HorizontalAlign.JUSTIFY, icon:DisplayObject = null):Alert
 		{
 			var alert:Alert = new Alert();
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				alert.maxWidth = 270;
 			
 			/* Define Alert Buttons */
@@ -137,11 +138,37 @@ package ui.popups
 				PopUpManager.addPopUp(alert);
 			}
 			else
-			{//There's currently one alert being displayed or app is in background, let's add this one to the queue
+			{
+				//There's currently one alert being displayed or app is in background, let's add this one to the queue
+				removeDuplicate(alertTitle, alertMessage);
 				alertQueue.push({ alert: alert, timeout: timeoutDuration});
 			}
 			
 			return alert; //Return the alert in case we need to do further customization to it outside this class
+		}
+		
+		private static function removeDuplicate(title:String, message:String):void
+		{
+			if (alertQueue == null || alertQueue.length == 0)
+				return;
+			
+			for(var i:int = alertQueue.length - 1 ; i >= 0; i--)
+			{
+				var queuedObject:Object = alertQueue[i];
+				if (queuedObject != null && queuedObject.alert != null)
+				{
+					var queuedAlert:Alert = queuedObject.alert as Alert;
+					if (queuedAlert.title == title && queuedAlert.message == message)
+					{
+						//Found duplicate. Remove it!
+						queuedAlert.removeEventListeners();
+						alertQueue.removeAt(i);
+						SystemUtil.executeWhenApplicationIsActive( queuedAlert.dispose );
+						queuedObject = null;
+					}
+				}
+			}
+			
 		}
 		
 		private static function processQueue(closeActivePopup:Boolean = true):void
@@ -155,7 +182,8 @@ package ui.popups
 				if (PopUpManager.isPopUp(activeAlert))
 					PopUpManager.removePopUp(activeAlert);
 				else
-					PopUpManager.removeAllPopUps();
+					activeAlert.removeFromParent();
+				
 				activeAlert.dispose();
 				activeAlert = null;
 					
@@ -172,7 +200,7 @@ package ui.popups
 					processAlertTimer(Number((alertQueue[0] as Object).timeout));
 				
 				activeAlert = Alert((alertQueue[0] as Object).alert);
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+				if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 					activeAlert.maxWidth = 270;
 				PopUpManager.addPopUp(activeAlert);
 				
@@ -197,9 +225,12 @@ package ui.popups
 		private static function onAlertTimedOut(event:TimerEvent):void
 		{
 			/* Cleanup Timeout Timer */
-			timeoutTimer.stop();
-			timeoutTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, onAlertTimedOut);
-			timeoutTimer = null;
+			if (timeoutTimer != null)
+			{
+				timeoutTimer.stop();
+				timeoutTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, onAlertTimedOut);
+				timeoutTimer = null;
+			}
 			
 			/* Process Internal Queue */
 			if (Constants.appInForeground)
@@ -208,7 +239,7 @@ package ui.popups
 
 		private static function onAlertClosed(e:Event):void
 		{
-			processQueue();
+			onAlertTimedOut(null);
 		}
 		
 		private static function onAppInForeground (e:SpikeEvent):void

@@ -94,8 +94,16 @@ package database
 		public static const LOCAL_SETTING_HEALTHKIT_STORE_ON:int = 22;
 		public static const LOCAL_SETTING_LICENSE_INFO_ACCEPTED:int = 23;
 		public static const LOCAL_SETTING_SELECTION_UNIT_DONE:int = 24;
-		public static const LOCAL_SETTING_TIMESTAMP_SINCE_LAST_INFO_UKNOWN_PACKET_TYPE:int = 25;
-		public static const LOCAL_SETTING_DONTASKAGAIN_ABOUT_UNKNOWN_PACKET_TYPE:int = 26;
+		/**
+		 * for G4. in case xdrip has wxl code which doesn't support writing transmitter id from app to xdrip, then Spike can give info and propose user to send
+		 * new wxl code that supports this.
+		 */
+		public static const LOCAL_SETTING_TIMESTAMP_SINCE_LAST_WARNING_OLD_WXL_CODE_USED:int = 25;
+		/**
+		 * for G4. in case xdrip has wxl code which doesn't support writing transmitter id from app to xdrip, then Spike can give info and propose user to send
+		 * new wxl code that supports this.
+		 */
+		public static const LOCAL_SETTING_DONTASKAGAIN_ABOUT_OLD_WXL_CODE_USED:int = 26;
 		public static const LOCAL_SETTING_SPEECH_INSTRUCTIONS_ACCEPTED:int = 27;
 		public static const LOCAL_SETTING_OVERRIDE_MUTE:int = 28;
 		public static const LOCAL_SETTING_UPDATE_SERVICE_INITIALCHECK:int = 29;
@@ -187,6 +195,40 @@ package database
 		 */
 		public static const LOCAL_SETTING_APP_BADGE_MMOL_MULTIPLIER_ON:int = 73;
 		
+		/**
+		 * Values in bugreport screen (email address, name). Will be saved so that user doesn't need to retype them everytime<br>
+		 * Default empty string
+		 */
+		public static const LOCAL_SETTING_BUG_REPORT_EMAIL:int = 74;
+		public static const LOCAL_SETTING_BUG_REPORT_NAME:int = 75;
+		
+		/**
+		 * Apple Watch#3
+		 */
+		public static const LOCAL_SETTING_WATCH_COMPLICATION_DISPLAY_IOB_ON:int = 76;
+		public static const LOCAL_SETTING_WATCH_COMPLICATION_DISPLAY_COB_ON:int = 77;
+		
+		/**
+		 * IFTTT #2
+		 */
+		public static const LOCAL_SETTING_IFTTT_BOLUS_ADDED_ON:int = 78;
+		public static const LOCAL_SETTING_IFTTT_BOLUS_UPDATED_ON:int = 79;
+		public static const LOCAL_SETTING_IFTTT_BOLUS_DELETED_ON:int = 80;
+		public static const LOCAL_SETTING_IFTTT_CARBS_ADDED_ON:int = 81;
+		public static const LOCAL_SETTING_IFTTT_CARBS_UPDATED_ON:int = 82;
+		public static const LOCAL_SETTING_IFTTT_CARBS_DELETED_ON:int = 83;
+		public static const LOCAL_SETTING_IFTTT_MEAL_ADDED_ON:int = 84;
+		public static const LOCAL_SETTING_IFTTT_MEAL_UPDATED_ON:int = 85;
+		public static const LOCAL_SETTING_IFTTT_MEAL_DELETED_ON:int = 86;
+		public static const LOCAL_SETTING_IFTTT_BGCHECK_ADDED_ON:int = 87;
+		public static const LOCAL_SETTING_IFTTT_BGCHECK_UPDATED_ON:int = 88;
+		public static const LOCAL_SETTING_IFTTT_BGCHECK_DELETED_ON:int = 89;
+		public static const LOCAL_SETTING_IFTTT_NOTE_ADDED_ON:int = 90;
+		public static const LOCAL_SETTING_IFTTT_NOTE_UPDATED_ON:int = 91;
+		public static const LOCAL_SETTING_IFTTT_NOTE_DELETED_ON:int = 92;
+		public static const LOCAL_SETTING_IFTTT_IOB_UPDATED_ON:int = 93;
+		public static const LOCAL_SETTING_IFTTT_COB_UPDATED_ON:int = 94;
+		
 		private static var localSettings:Array = [
 			"false",//LOCAL_SETTING_DETAILED_TRACING_ENABLED
 			"",//LOCAL_SETTING_TRACE_FILE_NAME
@@ -229,7 +271,7 @@ package database
 			"true",//LOCAL_SETTING_WATCH_COMPLICATION_DISPLAY_DELTA
 			"true",//LOCAL_SETTING_WATCH_COMPLICATION_DISPLAY_UNITS
 			"6",//LOCAL_SETTING_WATCH_COMPLICATION_GLUCOSE_HISTORY
-			"false",//LOCAL_SETTING_LOOP_SERVER_ON
+			"true",//LOCAL_SETTING_LOOP_SERVER_ON
 			"",//LOCAL_SETTING_LOOP_SERVER_USERNAME
 			"",//LOCAL_SETTING_LOOP_SERVER_PASSWORD
 			"0",//LOCAL_SETTING_TIMESTAMP_SINCE_LAST_EXPORT_SIDIARY
@@ -261,7 +303,28 @@ package database
 			"150",//LOCAL_SETTING_IFTTT_GLUCOSE_HIGH_THRESHOLD
 			"70",//LOCAL_SETTING_IFTTT_GLUCOSE_LOW_THRESHOLD
 			"false",//LOCAL_SETTING_IFTTT_HTTP_SERVER_ERRORS_ON
-			"false"//LOCAL_SETTING_APP_BADGE_MMOL_MULTIPLIER_ON
+			"false",//LOCAL_SETTING_APP_BADGE_MMOL_MULTIPLIER_ON
+			"",//LOCAL_SETTING_BUG_REPORT_EMAIL
+			"",//LOCAL_SETTING_BUG_REPORT_NAME
+			"false",//LOCAL_SETTING_WATCH_COMPLICATION_DISPLAY_IOB_ON
+			"false",//LOCAL_SETTING_WATCH_COMPLICATION_DISPLAY_COB_ON
+			"false",//LOCAL_SETTING_IFTTT_BOLUS_ADDED_ON
+			"false",//LOCAL_SETTING_IFTTT_BOLUS_UPDATED_ON
+			"false",//LOCAL_SETTING_IFTTT_BOLUS_DELETED_ON
+			"false",//LOCAL_SETTING_IFTTT_CARBS_ADDED_ON
+			"false",//LOCAL_SETTING_IFTTT_CARBS_UPDATED_ON
+			"false",//LOCAL_SETTING_IFTTT_CARBS_DELETED_ON
+			"false",//LOCAL_SETTING_IFTTT_MEAL_ADDED_ON
+			"false",//LOCAL_SETTING_IFTTT_MEAL_UPDATED_ON
+			"false",//LOCAL_SETTING_IFTTT_MEAL_DELETED_ON
+			"false",//LOCAL_SETTING_IFTTT_BGCHECK_ADDED_ON
+			"false",//LOCAL_SETTING_IFTTT_BGCHECK_UPDATED_ON
+			"false",//LOCAL_SETTING_IFTTT_BGCHECK_DELETED_ON
+			"false",//LOCAL_SETTING_IFTTT_NOTE_ADDED_ON
+			"false",//LOCAL_SETTING_IFTTT_NOTE_UPDATED_ON
+			"false",//LOCAL_SETTING_IFTTT_NOTE_DELETED_ON
+			"false",//LOCAL_SETTING_IFTTT_IOB_UPDATED_ON
+			"false"//LOCAL_SETTING_IFTTT_COB_UPDATED_ON
 		];
 		
 		public function LocalSettings() {

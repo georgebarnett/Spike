@@ -19,7 +19,9 @@ package ui.screens.display.settings.widget
 	
 	import model.ModelLocator;
 	
+	import starling.core.Starling;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.chart.ColorPicker;
 	import ui.screens.display.LayoutFactory;
@@ -75,6 +77,8 @@ package ui.screens.display.settings.widget
 			super();
 			
 			this._parent = parentDisplayObject;
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			stupInitialContent();
@@ -248,7 +252,7 @@ package ui.screens.display.settings.widget
 			
 			//Background Opacity Slider
 			backgroundOpacitySlider = new Slider();
-			backgroundOpacitySlider.width = 110;
+			backgroundOpacitySlider.width = Constants.isPortrait ? 110 : 210;
 			backgroundOpacitySlider.minimum = 0;
 			backgroundOpacitySlider.maximum = 100;
 			backgroundOpacitySlider.step = 1;
@@ -295,7 +299,7 @@ package ui.screens.display.settings.widget
 				dataList.push({ text: ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','main_line'), accessory: mainLineColorPicker });
 			dataList.push({ text: ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','grid_lines'), accessory: gridLinesColorPicker });
 			dataList.push({ text: ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','background'), accessory: backgroundColorPicker });
-			dataList.push({ text: DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','background_opacity') : ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','background_opacity_x'), accessory: opacityContainer });
+			dataList.push({ text: Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','background_opacity') : ModelLocator.resourceManagerInstance.getString('widgetsettingsscreen','background_opacity_x'), accessory: opacityContainer });
 			dataList.push({ text: "", accessory: resetColors });
 			dataList.push({ text: "", accessory: copyColors });
 			
@@ -614,6 +618,14 @@ package ui.screens.display.settings.widget
 			}
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+			
+			if (backgroundOpacitySlider != null)
+				backgroundOpacitySlider.width = Constants.isPortrait ? 110 : 210;
+		}
+		
 		/**
 		 * Utility
 		 */
@@ -626,6 +638,8 @@ package ui.screens.display.settings.widget
 		
 		override public function dispose():void
 		{
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if(urgentHighColorPicker != null)
 			{
 				urgentHighColorPicker.removeEventListener(ColorPicker.CHANGED, onColorChanged);

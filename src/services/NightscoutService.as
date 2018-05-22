@@ -9,7 +9,6 @@ package services
 	import flash.events.EventDispatcher;
 	import flash.events.IOErrorEvent;
 	import flash.events.TimerEvent;
-	import flash.globalization.LocaleID;
 	import flash.net.URLLoader;
 	import flash.net.URLRequestMethod;
 	import flash.net.URLVariables;
@@ -40,13 +39,20 @@ package services
 	
 	import network.NetworkConnector;
 	
+	import treatments.ProfileManager;
+	import treatments.Treatment;
+	import treatments.TreatmentsManager;
+	
 	import ui.popups.AlertManager;
 	
+	import utils.SpikeJSON;
 	import utils.TimeSpan;
 	import utils.Trace;
 	import utils.UniqueId;
 	
 	[ResourceBundle("nightscoutservice")]
+	[ResourceBundle("treatments")]
+	[ResourceBundle("globaltranslations")]
 	
 	public class NightscoutService extends EventDispatcher
 	{
@@ -57,7 +63,13 @@ package services
 		private static const MODE_VISUAL_CALIBRATION:String = "visualCalibration";
 		private static const MODE_SENSOR_START:String = "sensorStart";
 		private static const MODE_TEST_CREDENTIALS:String = "testCredentials";
+		private static const MODE_TREATMENT_UPLOAD:String = "treatmentUpload";
+		private static const MODE_TREATMENT_DELETE:String = "treatmentDelete";
+		private static const MODE_PROFILE_GET:String = "profileGet";
+		private static const MODE_TREATMENTS_GET:String = "treatmentsGet";
+		private static const MODE_PEBBLE_GET:String = "pebbleGet";
 		private static const MAX_SYNC_TIME:Number = 45 * 1000; //45 seconds
+		private static const MAX_RETRIES_FOR_TREATMENTS:int = 1;
 		private static const TIME_1_DAY:int = 24 * 60 * 60 * 1000;
 		private static const TIME_1_HOUR:int = 60 * 60 * 1000;
 		private static const TIME_6_MINUTES:int = 6 * 60 * 1000;
@@ -65,12 +77,14 @@ package services
 		private static const TIME_5_MINUTES_10_SECONDS:int = (5 * 60 * 1000) + 10000;
 		private static const TIME_5_MINUTES:int = 5 * 60 * 1000;
 		private static const TIME_4_MINUTES_30_SECONDS:int = (4 * 60 * 1000) + 30000;
+		private static const TIME_1_MINUTE:int = 60 * 1000;
 		private static const TIME_30_SECONDS:int = 30000;
 		private static const TIME_10_SECONDS:int = 10000;
+		private static const TIME_5_SECONDS:int = 6000;
 		
 		/* Logical Variables */
 		private static var serviceStarted:Boolean = false;
-		private static var serviceActive:Boolean = false;
+		public static var serviceActive:Boolean = false;
 		private static var _syncGlucoseReadingsActive:Boolean = false;
 		private static var syncGlucoseReadingsActiveLastChange:Number = (new Date()).valueOf();
 		private static var _syncCalibrationsActive:Boolean = false;
@@ -112,9 +126,36 @@ package services
 		private static var nightscoutFollowOffset:Number = 0;
 		private static var followerModeEnabled:Boolean = false;
 		private static var followerTimer:int = -1;
+		private static var nightscoutFollowAPISecret:String = "";
+		private static var nightscoutProfileURL:String = "";
+		private static var isNSProfileSet:Boolean = false;
 		
 		private static var _instance:NightscoutService = new NightscoutService();
-		
+
+		/* Treatments */
+		private static var nightscoutTreatmentsSyncEnabled:Boolean = true;
+		private static var treatmentsEnabled:Boolean = true;
+		private static var profileAlertShown:Boolean = false;
+		private static var activeTreatmentsUpload:Array = [];
+		private static var activeTreatmentsDelete:Array = [];
+		private static var retriesForTreatmentsDownload:int = 0;
+		private static var retriesForPebbleDownload:int = 0;
+		private static var _syncTreatmentsUploadActive:Boolean = false;
+		private static var _syncTreatmentsDeleteActive:Boolean = false;
+		private static var _syncTreatmentsDownloadActive:Boolean = false;
+		private static var _syncPebbleActive:Boolean = false;
+		private static var syncTreatmentsUploadActiveLastChange:Number = (new Date()).valueOf();
+		private static var syncTreatmentsDeleteActiveLastChange:Number = (new Date()).valueOf();
+		private static var syncTreatmentsDownloadActiveLastChange:Number = (new Date()).valueOf();
+		private static var syncPebbleActiveLastChange:Number = (new Date()).valueOf();
+		private static var lastRemoteTreatmentsSync:Number = 0;
+		private static var lastRemoteProfileSync:Number = 0;
+		private static var lastRemotePebbleSync:Number = 0;
+
+		private static var pumpUserEnabled:Boolean;
+
+		private static var nightscoutPebbleURL:String;
+
 		public function NightscoutService()
 		{
 			if (_instance != null)
@@ -132,27 +173,13 @@ package services
 			
 			formatter = new DateTimeFormatter();
 			formatter.dateTimePattern = "yyyy-MM-dd'T'HH:mm:ss.SSSZ";
-			formatter.setStyle("locale", LocaleID.DEFAULT);
+			formatter.setStyle("locale", "en_US");
 			formatter.useUTC = true;
 			
 			//Event listener for settings changes
 			CommonSettings.instance.addEventListener(SettingsServiceEvent.SETTING_CHANGED, onSettingChanged);
 			
-			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_ON) == "true" &&
-				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) != "" &&
-				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "" &&
-				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_URL_AND_API_SECRET_TESTED) == "false")
-			{
-				setupNightscoutProperties();
-				testNightscoutCredentials();
-			}
-			else if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_ON) == "true" &&
-					 CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) != "" &&
-					 CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "" &&
-					 CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_URL_AND_API_SECRET_TESTED) == "true")
-			{
-				activateService();
-			}
+			setupNightscoutProperties();
 			
 			if (BlueToothDevice.isFollower() && 
 				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_MODE).toUpperCase() == "FOLLOWER" &&
@@ -162,6 +189,21 @@ package services
 			{
 				setupFollowerProperties();
 				activateFollower();
+			}
+			
+			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_ON) == "true" &&
+				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) != "" &&
+				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "" &&
+				CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_URL_AND_API_SECRET_TESTED) == "false")
+			{
+				testNightscoutCredentials();
+			}
+			else if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_ON) == "true" &&
+					 CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) != "" &&
+					 CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "" &&
+					 CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_URL_AND_API_SECRET_TESTED) == "true")
+			{
+				activateService();
 			}
 		}
 		
@@ -186,7 +228,7 @@ package services
 			return newReading;
 		}
 		
-		private static function getInitialGlucoseReadings():void
+		private static function getInitialGlucoseReadings(e:Event = null):void
 		{
 			Trace.myTrace("NightscoutService.as", "in getInitialGlucoseReadings.");
 			
@@ -218,13 +260,14 @@ package services
 			if (activeGlucoseReadings.length == 0 || syncGlucoseReadingsActive || !NetworkInfo.networkInfo.isReachable())
 				return;
 			
-			if (Calibration.allForSensor().length < 2) 
+			if (Calibration.allForSensor().length < 2 && !BlueToothDevice.isFollower()) 
 				return;
 			
 			syncGlucoseReadingsActive = true;
 			
 			//Upload Glucose Readings
-			NetworkConnector.createNSConnector(nightscoutEventsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeGlucoseReadings), MODE_GLUCOSE_READING, onUploadGlucoseReadingsComplete, onConnectionFailed);
+			//NetworkConnector.createNSConnector(nightscoutEventsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeGlucoseReadings), MODE_GLUCOSE_READING, onUploadGlucoseReadingsComplete, onConnectionFailed);
+			NetworkConnector.createNSConnector(nightscoutEventsURL, apiSecret, URLRequestMethod.POST, SpikeJSON.stringify(activeGlucoseReadings), MODE_GLUCOSE_READING, onUploadGlucoseReadingsComplete, onConnectionFailed);
 		}
 		
 		private static function onBgreadingReceived(e:Event):void 
@@ -235,14 +278,20 @@ package services
 			else
 				latestGlucoseReading= BgReading.lastWithCalculatedValue();
 			
-			if(latestGlucoseReading == null)
+			if(latestGlucoseReading == null || (latestGlucoseReading.calculatedValue == 0 && latestGlucoseReading.calibration == null))
 				return;
+			
 			
 			activeGlucoseReadings.push(createGlucoseReading(latestGlucoseReading));
 			
-			//Only start uploading bg reading if it's newer than 6 minutes. Blucon sends historical data so we don't want to start upload for every reading. Just start upload on the last readings. The previous readings will still be uploaded because the reside in the queue array.
-			if (new Date().valueOf() - latestGlucoseReading.timestamp < TIME_6_MINUTES)
-				syncGlucoseReadings();
+			//Only start uploading bg reading if it's newer than 1 minute. Blucon sends historical data so we don't want to start upload for every reading. Just start upload on the last reading. The previous readings will still be uploaded because they reside in the queue array.
+			if (new Date().valueOf() - latestGlucoseReading.timestamp < TIME_1_MINUTE)
+			{
+				if (!BlueToothDevice.canDoBackfill()) //No backfill transmitter, sync immediately
+					syncGlucoseReadings();
+				else //Backfill transmitter. Wait 5 seconds to process all data
+					setTimeout(syncGlucoseReadings, TIME_5_SECONDS);
+			}
 		}
 		
 		private static function onUploadGlucoseReadingsComplete(e:Event):void
@@ -251,6 +300,9 @@ package services
 			
 			//Get loader
 			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			if (loader == null || loader.data == null)
+				return;
 			
 			//Get response
 			var response:String = loader.data;
@@ -267,7 +319,11 @@ package services
 				if (initialGlucoseReadingsIndex == 0)
 				{
 					//It's a new reading and there's no previous initial readings in queue
-					CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_BGREADING_TIMESTAMP, String(activeGlucoseReadings[activeGlucoseReadings.length -1].date));
+					if (activeGlucoseReadings != null && activeGlucoseReadings.length > 0 && activeGlucoseReadings[initialGlucoseReadingsIndex -1] != null && activeGlucoseReadings[initialGlucoseReadingsIndex -1].date != null) 
+						CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_BGREADING_TIMESTAMP, String(activeGlucoseReadings[activeGlucoseReadings.length -1].date));
+					else
+						CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_BGREADING_TIMESTAMP, String(new Date().valueOf()));
+							
 					activeGlucoseReadings.length = 0; 
 				}
 				else
@@ -276,6 +332,15 @@ package services
 					CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_BGREADING_TIMESTAMP, String(activeGlucoseReadings[initialGlucoseReadingsIndex -1].date));
 					activeGlucoseReadings = activeGlucoseReadings.slice(0, initialGlucoseReadingsIndex);
 					initialGlucoseReadingsIndex = 0;
+				}
+				
+				//Get remote treatments/IOB-COB
+				if (ModelLocator.bgReadings != null && ModelLocator.bgReadings.length > 0 && treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+				{
+					if (!pumpUserEnabled)
+						getRemoteTreatments();
+					else
+						getPebbleEndpoint();
 				}
 			}
 			else
@@ -287,6 +352,135 @@ package services
 		}
 		
 		/**
+		 * PROFILE
+		 */
+		private static function getNightscoutProfile():void
+		{
+			Trace.myTrace("NightscoutService.as", "getNightscoutProfile called!");
+			
+			if (!BlueToothDevice.isFollower() && !serviceActive)
+				return;
+			
+			if (BlueToothDevice.isFollower() && !followerModeEnabled)
+				return;
+			
+			var now:Number = new Date().valueOf();
+			
+			if (now - lastRemoteProfileSync < TIME_30_SECONDS)
+			{
+				Trace.myTrace("NightscoutService.as", "Fetched profile less than 30 seconds ago. Ignoring!");
+				return;
+			}
+			
+			lastRemoteProfileSync = now;
+			
+			if (!isNSProfileSet)
+			{
+				if (!NetworkInfo.networkInfo.isReachable())
+				{
+					if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+					{
+						Trace.myTrace("NightscoutService.as", "There's no Internet connection. Will retry in 30 seconds!");
+						setTimeout(getNightscoutProfile, TIME_30_SECONDS);
+					}
+					
+					return;
+				}
+				
+				//Define API secret
+				var profileAPISecret:String = "";
+				if (BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET) != "")
+					profileAPISecret = nightscoutFollowAPISecret;
+				else if (!BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "")
+					profileAPISecret = apiSecret;
+				
+				//Fetch profile
+				NetworkConnector.createNSConnector(nightscoutProfileURL, profileAPISecret != "" ? profileAPISecret : null, URLRequestMethod.GET, null, MODE_PROFILE_GET, onGetProfileComplete, onConnectionFailed);
+			}
+		}
+		
+		private static function onGetProfileComplete(e:Event):void
+		{
+			Trace.myTrace("NightscoutService.as", "onGetProfileComplete called!");
+			
+			//Get loader
+			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			//Get response
+			var response:String = loader.data;
+			
+			//Dispose loader
+			loader.removeEventListener(Event.COMPLETE, onDownloadGlucoseReadingsComplete);
+			loader.removeEventListener(IOErrorEvent.IO_ERROR, onDownloadGlucoseReadingsComplete);
+			loader = null;
+			
+			//Validate response
+			if (response.indexOf("defaultProfile") != -1 || response.indexOf("created_at") != -1)
+			{
+				try
+				{
+					var profileProperties:Object = SpikeJSON.parse(response);
+					if (profileProperties != null)
+					{
+						var dia:Number = Number.NaN;
+						var carbAbsorptionRate:Number = Number.NaN;
+						
+						if (profileProperties[0].dia)
+							dia = Number(profileProperties[0].dia);
+						else if (profileProperties[0].store && profileProperties[0].defaultProfile && profileProperties[0].store[profileProperties[0].defaultProfile].dia)
+							dia = Number(profileProperties[0].store[profileProperties[0].defaultProfile].dia);
+						
+						if (profileProperties[0].carbs_hr)
+							carbAbsorptionRate = Number(profileProperties[0].carbs_hr);
+						else if (profileProperties[0].store && profileProperties[0].defaultProfile && profileProperties[0].store[profileProperties[0].defaultProfile].carbs_hr)
+							carbAbsorptionRate = Number(profileProperties[0].store[profileProperties[0].defaultProfile].carbs_hr);
+						
+						
+						if (isNaN(dia) || isNaN(carbAbsorptionRate))
+						{
+							Trace.myTrace("NightscoutService.as", "User has not yet set a profile in Nightscout!");
+							
+							if (!profileAlertShown)
+							{
+								AlertManager.showSimpleAlert
+								(
+									ModelLocator.resourceManagerInstance.getString("globaltranslations","warning_alert_title"),
+									ModelLocator.resourceManagerInstance.getString("treatments","nightscout_profile_not_set")
+								);
+									
+								profileAlertShown = true;
+							}
+							
+							return;
+						}
+						
+						Trace.myTrace("NightscoutService.as", "Profile retrieved and parsed successfully! DIA: " + dia + " CAR: " + carbAbsorptionRate);
+						
+						isNSProfileSet = true; //Mark profile as downloaded
+							
+						//Add nightscout insulin to Spike and don't save it to DB
+						ProfileManager.addInsulin(ModelLocator.resourceManagerInstance.getString("treatments","nightscout_insulin"), dia, "", BlueToothDevice.isFollower() ? true : false, "000000", !BlueToothDevice.isFollower() || ModelLocator.INTERNAL_TESTING ? true : false);
+							
+						//Add nightscout carbs absorption rate and don't save it to DB
+						ProfileManager.addNightscoutCarbAbsorptionRate(carbAbsorptionRate);
+							
+						//Get treatmenents
+						if (!pumpUserEnabled)
+							getRemoteTreatments();
+						else
+							getPebbleEndpoint();
+					}
+				} 
+				catch(error:Error) 
+				{
+					Trace.myTrace("NightscoutService.as", "Error parsing profile properties. Will try on next transmitter reading! Response: " + response);
+				}
+			}
+			else
+				Trace.myTrace("NightscoutService.as", "Unexpected Nightscout response. Will try on next transmitter reading! Response: " + response);
+		}
+		
+		/**
 		 * FOLLOWER MODE
 		 */
 		private static function setupFollowerProperties():void
@@ -295,6 +489,8 @@ package services
 			if (nightscoutFollowURL.indexOf('http') == -1) nightscoutFollowURL = "https://" + nightscoutFollowURL;
 			
 			nightscoutFollowOffset = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_OFFSET));
+			
+			nightscoutFollowAPISecret = Hex.fromArray(hash.hash(Hex.toArray(Hex.fromString(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET)))));
 		}
 		
 		private static function activateFollower():void
@@ -305,7 +501,12 @@ package services
 			
 			clearTimeout(followerTimer);
 			
+			clearTreatments();
+			
+			setupNightscoutProperties();
 			getRemoteReadings();
+			if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+				setTimeout(getNightscoutProfile, 1000);
 			
 			activateTimer();
 		}
@@ -323,6 +524,22 @@ package services
 			nextFollowDownloadTime = 0;
 			
 			ModelLocator.bgReadings.length = 0;
+			
+			clearTreatments();
+		}
+		
+		private static function clearTreatments():void
+		{
+			TreatmentsManager.removeAllTreatmentsFromMemory();
+			activeCalibrations.length = 0;
+			activeSensorStarts.length = 0;
+			activeGlucoseReadings.length = 0;
+			activeTreatmentsDelete.length = 0;
+			activeTreatmentsUpload.length = 0;
+			activeVisualCalibrations.length = 0;
+			lastRemoteProfileSync = 0;
+			lastRemoteTreatmentsSync = 0;
+			isNSProfileSet = false;
 		}
 		
 		private static function calculateNextFollowDownloadTime():void 
@@ -416,7 +633,7 @@ package services
 				waitingForNSData = true;
 				lastFollowDownloadAttempt = (new Date()).valueOf();
 				
-				NetworkConnector.createNSConnector(nightscoutFollowURL + parameters.toString(), null, URLRequestMethod.GET, null, MODE_GLUCOSE_READING_GET, onDownloadGlucoseReadingsComplete, onConnectionFailed);
+				NetworkConnector.createNSConnector(nightscoutFollowURL + parameters.toString(), CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET) != "" ? nightscoutFollowAPISecret : null, URLRequestMethod.GET, null, MODE_GLUCOSE_READING_GET, onDownloadGlucoseReadingsComplete, onConnectionFailed);
 			}
 			else
 			{
@@ -465,7 +682,8 @@ package services
 			try 
 			{
 				var BgReadingsToSend:Array = [];
-				var NSResponseJSON:Object = JSON.parse(response);
+				//var NSResponseJSON:Object = JSON.parse(response);
+				var NSResponseJSON:Object = SpikeJSON.parse(response);
 				if (NSResponseJSON is Array) 
 				{
 					var NSBgReadings:Array = NSResponseJSON as Array;
@@ -524,7 +742,17 @@ package services
 					
 					if (newData) 
 					{
+						//Notify Listeners
 						_instance.dispatchEvent(new FollowerEvent(FollowerEvent.BG_READING_RECEIVED, false, false, BgReadingsToSend));
+						
+						//Get remote treatments/pebble
+						if (ModelLocator.bgReadings != null && ModelLocator.bgReadings.length > 0 && treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+						{
+							if (!pumpUserEnabled)
+								getRemoteTreatments();
+							else
+								getPebbleEndpoint();
+						}
 					}
 				} 
 				else 
@@ -536,6 +764,518 @@ package services
 			}
 			
 			setNextFollowerFetch();
+		}
+		
+		/**
+		 * TREATMENTS
+		 */
+		private static function createTreatmentObject(treatment:Treatment):Object
+		{
+			var newTreatment:Object = new Object();
+			if (treatment.type == Treatment.TYPE_BOLUS || treatment.type == Treatment.TYPE_CORRECTION_BOLUS)
+			{
+				newTreatment["eventType"] = "Correction Bolus";	
+				newTreatment["insulin"] = treatment.insulinAmount;	
+			}
+			else if (treatment.type == Treatment.TYPE_CARBS_CORRECTION)
+			{
+				newTreatment["eventType"] = "Carb Correction";	
+				newTreatment["carbs"] = treatment.carbs;	
+			}
+			else if (treatment.type == Treatment.TYPE_GLUCOSE_CHECK)
+			{
+				newTreatment["eventType"] = "BG Check";	
+				newTreatment["glucose"] = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true" ? treatment.glucose : Math.round(BgReading.mgdlToMmol(treatment.glucose) * 10) / 10;
+				newTreatment["glucoseType"] = "Finger";	
+			}
+			else if (treatment.type == Treatment.TYPE_MEAL_BOLUS)
+			{
+				newTreatment["eventType"] = "Meal Bolus";
+				newTreatment["insulin"] = treatment.insulinAmount;
+				newTreatment["carbs"] = treatment.carbs;
+			}
+			else if (treatment.type == Treatment.TYPE_NOTE)
+			{
+				newTreatment["eventType"] = "Note";
+				newTreatment["duration"] = 45;
+			}
+			newTreatment["_id"] = treatment.ID;
+			newTreatment["created_at"] = formatter.format(treatment.timestamp).replace("000+0000", "000Z");
+			newTreatment["enteredBy"] = "Spike";
+			newTreatment["notes"] = treatment.note;
+			
+			return newTreatment;
+		}
+		
+		private static function deleteInternalTreatment(arrayToDelete:Array, treatment:Treatment):Boolean
+		{
+			var treatmentDeleted:Boolean = false;
+			
+			if (arrayToDelete == null || treatment == null)
+				return treatmentDeleted;
+			
+			for (var i:int = 0; i < arrayToDelete.length; i++) 
+			{
+				var nsTreatment:Object = arrayToDelete[i] as Object;
+				if (nsTreatment != null && nsTreatment["_id"] != null && nsTreatment["_id"] == treatment.ID)
+				{
+					arrayToDelete.removeAt(i);
+					nsTreatment = null;
+					treatmentDeleted = true;
+					break;
+				}
+			}
+			
+			return treatmentDeleted;
+		}
+		
+		public static function uploadTreatment(treatment:Treatment):void
+		{
+			if (!serviceActive)
+				return;
+			
+			Trace.myTrace("NightscoutService.as", "in uploadTreatment.");
+			
+			//Check if the treatment is already present in another queue and delete it.
+			if (!deleteInternalTreatment(activeTreatmentsDelete, treatment))
+			{
+				//Add treatment to queue
+				activeTreatmentsUpload.push(createTreatmentObject(treatment));
+				
+				//Sync uploads
+				syncTreatmentsUpload();
+			}
+		}
+		
+		private static function getInitialTreatments():void
+		{
+			Trace.myTrace("NightscoutService.as", "in getInitialTreatments");
+			
+			for (var i:int = 0; i < TreatmentsManager.treatmentsList.length; i++) 
+			{
+				//Add treatment to queue
+				var treatment:Treatment = TreatmentsManager.treatmentsList[i] as Treatment;
+				activeTreatmentsUpload.push(createTreatmentObject(treatment));
+			}
+			
+			//Sync uploads
+			syncTreatmentsUpload();
+		}
+		
+		private static function syncTreatmentsUpload():void
+		{
+			if (activeTreatmentsUpload.length == 0 || syncTreatmentsUploadActive || !NetworkInfo.networkInfo.isReachable())
+				return;
+			
+			if (!BlueToothDevice.isFollower() && !serviceActive)
+				return;
+			
+			if (BlueToothDevice.isFollower() && !followerModeEnabled)
+				return;
+			
+			Trace.myTrace("NightscoutService.as", "in syncTreatmentsUpload. Number of treatments to upload/update: " + activeTreatmentsUpload.length);
+			
+			syncTreatmentsUploadActive = true;
+			
+			//Upload Treatment
+			NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.PUT, SpikeJSON.stringify(activeTreatmentsUpload[0]), MODE_TREATMENT_UPLOAD, onUploadTreatmentComplete, onConnectionFailed);
+		}
+		
+		private static function onUploadTreatmentComplete(e:Event):void
+		{
+			Trace.myTrace("NightscoutService.as", "in onUploadTreatmentComplete.");
+			
+			//Get loader
+			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			//Get response
+			var response:String = loader.data;
+			
+			//Dispose loader
+			loader.removeEventListener(Event.COMPLETE, onUploadTreatmentComplete);
+			loader.removeEventListener(IOErrorEvent.IO_ERROR, onUploadTreatmentComplete);
+			loader = null;
+			
+			syncTreatmentsUploadActive = false;
+			
+			if (response.indexOf("Error") == -1 && response.indexOf("DOCTYPE") == -1 && response.indexOf("ok") != -1)
+			{
+				Trace.myTrace("NightscoutService.as", "Treatment uploaded/updated successfully!");
+				
+				//Remove treatment from queue
+				activeTreatmentsUpload.shift() 
+				
+				if (activeTreatmentsUpload.length > 0)
+				{
+					Trace.myTrace("NightscoutService.as", "Uploading/updating next treatment in queue.");
+					syncTreatmentsUpload();
+				}
+				else
+				{
+					if (!pumpUserEnabled)
+						getRemoteTreatments();
+					else
+						getPebbleEndpoint();
+				}
+			}
+			else
+				Trace.myTrace("NightscoutService.as", "Error uploading/updating treatment. Server response: " + response);
+		}
+		
+		public static function deleteTreatment(treatment:Treatment):void
+		{
+			Trace.myTrace("NightscoutService.as", "in deleteTreatment.");
+			
+			//Check if the treatment is already present in another queue and delete it.
+			if (!deleteInternalTreatment(activeTreatmentsUpload, treatment))
+			{
+				//Add treatment to queue
+				activeTreatmentsDelete.push(treatment);
+				
+				//Delete treatment
+				syncTreatmentsDelete();
+			}
+		}
+		
+		private static function syncTreatmentsDelete():void
+		{
+			if (activeTreatmentsDelete.length == 0 || syncTreatmentsDeleteActive || !NetworkInfo.networkInfo.isReachable())
+				return;
+			
+			if (!BlueToothDevice.isFollower() && !serviceActive)
+				return;
+			
+			if (BlueToothDevice.isFollower() && !followerModeEnabled)
+				return;
+			
+			Trace.myTrace("NightscoutService.as", "in syncTreatmentsUpload. Number of treatments to delete: " + activeTreatmentsDelete.length);
+			
+			syncTreatmentsDeleteActive = true;
+			
+			//Delete Treatment
+			NetworkConnector.createNSConnector(nightscoutTreatmentsURL + "/" + (activeTreatmentsDelete[0] as Treatment).ID, apiSecret, URLRequestMethod.DELETE, null, MODE_TREATMENT_DELETE, onDeleteTreatmentComplete, onConnectionFailed);
+		}
+		
+		private static function onDeleteTreatmentComplete(e:Event):void
+		{
+			Trace.myTrace("NightscoutService.as", "in onTreatmentDelete.");
+			
+			//Get loader
+			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			//Get response
+			var response:String = loader.data;
+			
+			//Dispose loader
+			loader.removeEventListener(Event.COMPLETE, onDeleteTreatmentComplete);
+			loader.removeEventListener(IOErrorEvent.IO_ERROR, onDeleteTreatmentComplete);
+			loader = null;
+			
+			//Update Internal Variables
+			syncTreatmentsDeleteActive = false;
+			
+			if (response.indexOf("{}") != -1 && response.indexOf("Error") == -1 && response.indexOf("DOCTYPE") == -1)
+			{
+				Trace.myTrace("NightscoutService.as", "Treatment deleted successfully!");
+				
+				//Remove treatment from queue
+				activeTreatmentsDelete.shift() 
+				
+				if (activeTreatmentsDelete.length > 0)
+				{
+					Trace.myTrace("NightscoutService.as", "Deleting next treatment in queue.");
+					syncTreatmentsDelete();
+				}
+			}
+			else
+				Trace.myTrace("NightscoutService.as", "Error deleting treatment. Server response: " + response);
+		}
+		
+		private static function getPebbleEndpoint():void
+		{
+			if (!treatmentsEnabled || !nightscoutTreatmentsSyncEnabled)
+				return;
+			
+			if (!pumpUserEnabled)
+			{
+				getRemoteTreatments();
+				return;
+			}
+			
+			Trace.myTrace("NightscoutService.as", "getPebbleEndpoint called!");
+			
+			//Validation
+			if (!isNSProfileSet)
+			{
+				if (nightscoutTreatmentsSyncEnabled && treatmentsEnabled)
+				{
+					Trace.myTrace("NightscoutService.as", "Profile has not yet been downloaded. Will try to download now!");
+					getNightscoutProfile();
+				}
+				
+				return;
+			}
+			
+			if (!NetworkInfo.networkInfo.isReachable())
+			{
+				Trace.myTrace("NightscoutService.as", "There's no Internet connection.");
+				
+				return;
+			}
+			
+			var now:Number = new Date().valueOf();
+			
+			if (now - lastRemotePebbleSync < TIME_30_SECONDS)
+				return;
+			
+			lastRemotePebbleSync = now;
+			
+			syncPebbleActive = true;
+			
+			//API Secret
+			var treatmentAPISecret:String = "";
+			if (BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET) != "")
+				treatmentAPISecret = nightscoutFollowAPISecret;
+			else if (!BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "")
+				treatmentAPISecret = apiSecret;
+			
+			NetworkConnector.createNSConnector(nightscoutPebbleURL, treatmentAPISecret != "" ? treatmentAPISecret : null, URLRequestMethod.GET, null, MODE_PEBBLE_GET, onGetPebbleComplete, onConnectionFailed);
+		}
+		
+		private static function onGetPebbleComplete(e:Event):void
+		{
+			if (!treatmentsEnabled || !nightscoutTreatmentsSyncEnabled)
+				return;
+			
+			if (!pumpUserEnabled)
+			{
+				getRemoteTreatments();
+				return;
+			}
+			
+			Trace.myTrace("NightscoutService.as", "onGetPebbleComplete called!");
+			
+			syncPebbleActive = false;
+			
+			//Get loader
+			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			//Get response
+			var response:String = loader.data;
+			
+			//Dispose loader
+			loader.removeEventListener(Event.COMPLETE, onDownloadGlucoseReadingsComplete);
+			loader.removeEventListener(IOErrorEvent.IO_ERROR, onDownloadGlucoseReadingsComplete);
+			loader = null;
+			
+			//Validate response
+			if (response.indexOf("bgs") != -1 && response.indexOf("DOCTYPE") == -1)
+			{
+				try
+				{
+					var pebbleProperties:Object = SpikeJSON.parse(response) as Object;
+					if (pebbleProperties != null && pebbleProperties.bgs != null)
+					{
+						var previousPumpIOB:Number = TreatmentsManager.pumpIOB;
+						var pumpIOB:Number = Number(pebbleProperties.bgs[0].iob);
+						TreatmentsManager.setPumpIOB(pumpIOB);
+						
+						var previousPumpCOB:Number = TreatmentsManager.pumpCOB;
+						var pumpCOB:Number = Number(pebbleProperties.bgs[0].cob);
+						TreatmentsManager.setPumpCOB(pumpCOB);
+						
+						if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+							getRemoteTreatments();
+						
+						//Notify listeners of updated IOB/COB
+						if (previousPumpIOB != pumpIOB || previousPumpCOB != pumpCOB)
+							TreatmentsManager.notifyIOBCOB();
+						
+						retriesForPebbleDownload = 0;
+					}
+					else
+					{
+						if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && pumpUserEnabled && retriesForPebbleDownload < MAX_RETRIES_FOR_TREATMENTS)
+						{
+							Trace.myTrace("NightscoutService.as", "Server returned an unexpected response. Retrying new pebble fetch in 30 seconds. Responder: " + response);
+							setTimeout(getPebbleEndpoint, TIME_30_SECONDS);
+							retriesForPebbleDownload++;
+						}
+					}
+				} 
+				catch(error:Error) 
+				{
+					if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && pumpUserEnabled && retriesForPebbleDownload < MAX_RETRIES_FOR_TREATMENTS)
+					{
+						Trace.myTrace("NightscoutService.as", "Error parsing Nightscout response. Retrying new pebble fetch in 30 seconds. Error: " + error.message + " | Response: " + response);
+						setTimeout(getPebbleEndpoint, TIME_30_SECONDS);
+						retriesForPebbleDownload++;
+					}
+				}
+			}
+			else
+			{
+				if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && pumpUserEnabled && retriesForPebbleDownload < MAX_RETRIES_FOR_TREATMENTS)
+				{
+					Trace.myTrace("NightscoutService.as", "Server returned an unexpected response. Retrying new pebble's fetch in 30 seconds. Responder: " + response);
+					setTimeout(getPebbleEndpoint, TIME_30_SECONDS);
+					retriesForPebbleDownload++;
+				}
+			}
+		}
+		
+		private static function getRemoteTreatments():void
+		{
+			if (!treatmentsEnabled || !nightscoutTreatmentsSyncEnabled)
+				return;
+			
+			Trace.myTrace("NightscoutService.as", "getRemoteTreatments called!");
+			
+			//Validation
+			if (!isNSProfileSet)
+			{
+				if (nightscoutTreatmentsSyncEnabled && treatmentsEnabled)
+				{
+					Trace.myTrace("NightscoutService.as", "Profile has not yet been downloaded. Will try to download now!");
+					getNightscoutProfile();
+				}
+				
+				return;
+			}
+			
+			if (!NetworkInfo.networkInfo.isReachable())
+			{
+				Trace.myTrace("NightscoutService.as", "There's no Internet connection.");
+				
+				return;
+			}
+			
+			if ((activeTreatmentsDelete.length > 0 || activeTreatmentsUpload.length > 0 || activeSensorStarts.length > 0 || activeVisualCalibrations.length > 0) && retriesForTreatmentsDownload < MAX_RETRIES_FOR_TREATMENTS)
+			{	
+				Trace.myTrace("NightscoutService.as", "Spike is still syncing treatments added by user. Will retry in 30 seconds");
+					
+				if (activeTreatmentsDelete.length > 0 && !syncTreatmentsDeleteActive)
+					syncTreatmentsDelete();
+				else if (activeTreatmentsUpload.length > 0 && !syncTreatmentsUploadActive)
+					syncTreatmentsUpload();
+				else if (activeSensorStarts.length > 0 && !syncSensorStartActive)
+					syncSensorStart();
+				else if (activeVisualCalibrations.length > 0 && !syncVisualCalibrationsActive)
+					syncVisualCalibrations();
+				
+				setTimeout(getRemoteTreatments, TIME_30_SECONDS);
+				
+				retriesForTreatmentsDownload++;
+				
+				return;
+			}
+			
+			var now:Number = new Date().valueOf();
+			
+			if (now - lastRemoteTreatmentsSync < TIME_30_SECONDS)
+				return;
+			
+			lastRemoteTreatmentsSync = now;
+			
+			syncTreatmentsDownloadActive = true;
+			
+			//Define request parameters
+			var parameters:URLVariables = new URLVariables();
+			parameters["find[created_at][$gte]"] = formatter.format(new Date().valueOf() - TIME_1_DAY);
+			
+			//API Secret
+			var treatmentAPISecret:String = "";
+			if (BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET) != "")
+				treatmentAPISecret = nightscoutFollowAPISecret;
+			else if (!BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_API_SECRET) != "")
+				treatmentAPISecret = apiSecret;
+			
+			NetworkConnector.createNSConnector(nightscoutTreatmentsURL + ".json?" + parameters, treatmentAPISecret != "" ? treatmentAPISecret : null, URLRequestMethod.GET, null, MODE_TREATMENTS_GET, onGetTreatmentsComplete, onConnectionFailed);
+		}
+		
+		private static function onGetTreatmentsComplete(e:Event):void
+		{
+			if (!treatmentsEnabled || !nightscoutTreatmentsSyncEnabled)
+				return;
+			
+			Trace.myTrace("NightscoutService.as", "onGetTreatmentsComplete called!");
+			
+			syncTreatmentsDownloadActive = false;
+			
+			//Get loader
+			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			//Get response
+			var response:String = loader.data;
+			
+			//Dispose loader
+			loader.removeEventListener(Event.COMPLETE, onDownloadGlucoseReadingsComplete);
+			loader.removeEventListener(IOErrorEvent.IO_ERROR, onDownloadGlucoseReadingsComplete);
+			loader = null;
+			
+			//Validate if we can process treatments
+			if ((activeTreatmentsDelete.length > 0 || activeTreatmentsUpload.length > 0 || activeSensorStarts.length > 0 || activeVisualCalibrations.length > 0) && retriesForTreatmentsDownload < MAX_RETRIES_FOR_TREATMENTS)
+			{
+				Trace.myTrace("NightscoutService.as", "Spike is still syncing treatments added by user. Will retry in 30 seconds to avoid overlaps!");
+				
+				if (activeTreatmentsDelete.length > 0 && !syncTreatmentsDeleteActive)
+					syncTreatmentsDelete();
+				else if (activeTreatmentsUpload.length > 0 && !syncTreatmentsUploadActive)
+					syncTreatmentsUpload();
+				else if (activeSensorStarts.length > 0 && !syncSensorStartActive)
+					syncSensorStart();
+				else if (activeVisualCalibrations.length > 0 && !syncVisualCalibrationsActive)
+					syncVisualCalibrations();
+				
+				setTimeout(getRemoteTreatments, TIME_30_SECONDS);
+				
+				retriesForTreatmentsDownload++;
+				
+				return;
+			}
+			
+			//Validate response
+			if (response.indexOf("created_at") != -1 && response.indexOf("Error") == -1 && response.indexOf("DOCTYPE") == -1)
+			{
+				try
+				{
+					var nightscoutTreatments:Array = SpikeJSON.parse(response) as Array;
+					if (nightscoutTreatments!= null && nightscoutTreatments is Array)
+					{
+						//Send nightscout treatments to TreatmentsManager for further processing
+						TreatmentsManager.processNightscoutTreatments(nightscoutTreatments);
+						
+						retriesForTreatmentsDownload = 0;
+					}
+					else
+					{
+						if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && retriesForTreatmentsDownload < MAX_RETRIES_FOR_TREATMENTS)
+						{
+							Trace.myTrace("NightscoutService.as", "Server returned an unexpected response. Retrying new treatment's fetch in 30 seconds. Responder: " + response);
+							setTimeout(getRemoteTreatments, TIME_30_SECONDS);
+							retriesForTreatmentsDownload++;
+						}
+					}
+				} 
+				catch(error:Error) 
+				{
+					if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && retriesForTreatmentsDownload < MAX_RETRIES_FOR_TREATMENTS)
+					{
+						Trace.myTrace("NightscoutService.as", "Error parsing Nightscout response. Retrying new treatment's fetch in 30 seconds. Error: " + error.message + " | Response: " + response);
+						setTimeout(getRemoteTreatments, TIME_30_SECONDS);
+						retriesForTreatmentsDownload++;
+					}
+				}
+			}
+			else
+			{
+				if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && retriesForTreatmentsDownload < MAX_RETRIES_FOR_TREATMENTS)
+				{
+					Trace.myTrace("NightscoutService.as", "Server returned an unexpected response. Retrying new treatment's fetch in 30 seconds. Responder: " + response);
+					setTimeout(getRemoteTreatments, TIME_30_SECONDS);
+					retriesForTreatmentsDownload++;
+				}
+			}
 		}
 		
 		/**
@@ -564,12 +1304,13 @@ package services
 		private static function createVisualCalibrationObject(calibration:Calibration):Object
 		{
 			var newVisualCalibration:Object = new Object();
+			newVisualCalibration["_id"] = UniqueId.createEventId();	
 			newVisualCalibration["eventType"] = "BG Check";	
-			newVisualCalibration["created_at"] = formatter.format(calibration.timestamp);
-			newVisualCalibration["enteredBy"] = "Spike App";	
+			newVisualCalibration["created_at"] = formatter.format(calibration.timestamp).replace("000+0000", "000Z");
+			newVisualCalibration["enteredBy"] = "Spike";	
 			newVisualCalibration["glucose"] = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true" ? calibration.bg : Math.round(BgReading.mgdlToMmol(calibration.bg) * 10) / 10;
 			newVisualCalibration["glucoseType"] = "Finger";
-			newVisualCalibration["notes"] = ModelLocator.resourceManagerInstance.getString("nightscoutservice","sensor_calibration");
+			newVisualCalibration["notes"] = ModelLocator.resourceManagerInstance.getString("treatments","sensor_calibration_note");
 			
 			return newVisualCalibration;
 		}
@@ -579,23 +1320,30 @@ package services
 			if (activeCalibrations.length == 0 || syncGlucoseReadingsActive || !NetworkInfo.networkInfo.isReachable())
 				return;
 			
+			if (!BlueToothDevice.isFollower() && !serviceActive)
+				return;
+			
+			if (BlueToothDevice.isFollower() && !followerModeEnabled)
+				return;
+			
 			syncCalibrationsActive = true;
 			
 			//Upload Glucose Readings
-			NetworkConnector.createNSConnector(nightscoutEventsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeCalibrations), MODE_CALIBRATION, onUploadCalibrationsComplete, onConnectionFailed);
+			//NetworkConnector.createNSConnector(nightscoutEventsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeCalibrations), MODE_CALIBRATION, onUploadCalibrationsComplete, onConnectionFailed);
+			NetworkConnector.createNSConnector(nightscoutEventsURL, apiSecret, URLRequestMethod.POST, SpikeJSON.stringify(activeCalibrations), MODE_CALIBRATION, onUploadCalibrationsComplete, onConnectionFailed);
 		}
 		
 		private static function getInitialCalibrations():void
 		{
 			Trace.myTrace("NightscoutService.as", "in getInitialCalibrations.");
 			
-			var calibrationList:Array = Calibration.allForSensor().toArray();
+			var calibrationList:Array = Calibration.allForSensor();
 			var lastCalibrationSyncTimeStamp:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_CALIBRATION_TIMESTAMP));
 			
 			for(var i:int = calibrationList.length - 1 ; i >= 0; i--)
 			{
 				var calibration:Calibration = calibrationList[i] as Calibration;
-				if (calibration.timestamp > lastCalibrationSyncTimeStamp && calibration.slope != 0) 
+				if (calibration.timestamp > lastCalibrationSyncTimeStamp && calibration.slope != 0 && i > 0) 
 				{
 					activeCalibrations.push(createCalibrationObject(calibration));					
 					activeVisualCalibrations.push(createVisualCalibrationObject(calibration));
@@ -615,10 +1363,17 @@ package services
 		
 		private static function onCalibrationReceived(e:CalibrationServiceEvent):void 
 		{
+			if (Calibration.allForSensor().length == 1) //Ensures compatibility with the new method of only one initial calibration (ignores the first one)
+				return;
+			
 			var lastCalibration:Calibration = Calibration.last();
 			
 			activeCalibrations.push(createCalibrationObject(lastCalibration));
-			activeVisualCalibrations.push(createVisualCalibrationObject(lastCalibration));
+			var visualCalibration:Object = createVisualCalibrationObject(lastCalibration);
+			activeVisualCalibrations.push(visualCalibration);
+			
+			//Add calibration treatment to Spike
+			TreatmentsManager.addInternalCalibrationTreatment(lastCalibration.bg, lastCalibration.timestamp, visualCalibration._id);
 			
 			syncCalibrations();
 			syncVisualCalibrations();
@@ -630,6 +1385,9 @@ package services
 			
 			//Get loader
 			var loader:URLLoader = e.currentTarget as URLLoader;
+			
+			if (loader == null || loader.data == null)
+				return;
 			
 			//Get response
 			var response:String = loader.data;
@@ -645,7 +1403,14 @@ package services
 			if (response.indexOf(BlueToothDevice.name) != -1)
 			{
 				Trace.myTrace("NightscoutService.as", "Calibration upload was successful.");
-				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_CALIBRATION_TIMESTAMP, String(activeCalibrations[activeCalibrations.length - 1].date));
+				
+				var calibrationUploadTimestamp:Number;
+				if (Calibration.last() != null && !isNaN(Calibration.last().timestamp))
+					calibrationUploadTimestamp = Calibration.last().timestamp;
+				else
+					calibrationUploadTimestamp = new Date().valueOf();
+				
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_UPLOAD_CALIBRATION_TIMESTAMP, String(calibrationUploadTimestamp));
 				activeCalibrations.length = 0;
 			}
 			else
@@ -659,10 +1424,17 @@ package services
 			if (activeVisualCalibrations.length == 0 || syncVisualCalibrationsActive || !NetworkInfo.networkInfo.isReachable())
 				return;
 			
+			if (!BlueToothDevice.isFollower() && !serviceActive)
+				return;
+			
+			if (BlueToothDevice.isFollower() && !followerModeEnabled)
+				return;
+			
 			syncVisualCalibrationsActive = true;
 			
 			//Upload Glucose Readings
-			NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeVisualCalibrations), MODE_VISUAL_CALIBRATION, onUploadVisualCalibrationsComplete, onConnectionFailed);
+			//NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeVisualCalibrations), MODE_VISUAL_CALIBRATION, onUploadVisualCalibrationsComplete, onConnectionFailed);
+			NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.POST, SpikeJSON.stringify(activeVisualCalibrations), MODE_VISUAL_CALIBRATION, onUploadVisualCalibrationsComplete, onConnectionFailed);
 		}
 		
 		private static function onUploadVisualCalibrationsComplete(e:Event):void
@@ -698,13 +1470,20 @@ package services
 		 */
 		private static function syncSensorStart():void
 		{
-			if (activeSensorStarts.length == 0 || syncSensorStartActive || !NetworkInfo.networkInfo.isReachable())
+			if (activeSensorStarts.length == 0 || syncSensorStartActive || !NetworkInfo.networkInfo.isReachable() || !serviceActive)
+				return;
+			
+			if (!BlueToothDevice.isFollower() && !serviceActive)
+				return;
+			
+			if (BlueToothDevice.isFollower() && !followerModeEnabled)
 				return;
 			
 			syncSensorStartActive = true;
 			
-			//Upload Glucose Readings
-			NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeSensorStarts), MODE_SENSOR_START, onUploadSensorStartComplete, onConnectionFailed);
+			//Upload Sensor Start treatment
+			//NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.POST, JSON.stringify(activeSensorStarts), MODE_SENSOR_START, onUploadSensorStartComplete, onConnectionFailed);
+			NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.POST, SpikeJSON.stringify(activeSensorStarts), MODE_SENSOR_START, onUploadSensorStartComplete, onConnectionFailed);
 		}
 		
 		private static function getSensorStart():void
@@ -712,9 +1491,14 @@ package services
 			Trace.myTrace("NightscoutService.as", "in getSensorStart.");
 			
 			var newSensor:Object = new Object();
+			var eventID:String = UniqueId.createEventId();
+			newSensor["_id"] = eventID;	
 			newSensor["eventType"] = "Sensor Start";	
-			newSensor["created_at"] = formatter.format(Sensor.getActiveSensor().startedAt);
+			newSensor["created_at"] = formatter.format(Sensor.getActiveSensor().startedAt).replace("000+0000", "000Z");
 			newSensor["enteredBy"] = "Spike";
+			
+			//Add sensor start to Chart
+			TreatmentsManager.addInternalSensorStartTreatment(Sensor.getActiveSensor().startedAt, eventID);
 			
 			activeSensorStarts.push(newSensor);
 			
@@ -768,9 +1552,10 @@ package services
 				credentialsTester["_id"] = credentialsTesterID;
 				credentialsTester["eventType"] = "Note";
 				credentialsTester["duration"] = 30;
-				credentialsTester["notes"] = "Spike App Authentication Test";
+				credentialsTester["notes"] = "Spike Authentication Test";
 				
-				NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.PUT, JSON.stringify(credentialsTester), MODE_TEST_CREDENTIALS, onTestCredentialsComplete, onConnectionFailed);
+				//NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.PUT, JSON.stringify(credentialsTester), MODE_TEST_CREDENTIALS, onTestCredentialsComplete, onConnectionFailed);
+				NetworkConnector.createNSConnector(nightscoutTreatmentsURL, apiSecret, URLRequestMethod.PUT, SpikeJSON.stringify(credentialsTester), MODE_TEST_CREDENTIALS, onTestCredentialsComplete, onConnectionFailed);
 			}
 			else
 			{
@@ -819,7 +1604,8 @@ package services
 				}
 				else
 				{
-					var responseInfo:Object = JSON.parse(response);
+					//var responseInfo:Object = JSON.parse(response);
+					var responseInfo:Object = SpikeJSON.parse(response);
 					if (responseInfo.ok != null && responseInfo.ok == 1)
 					{
 						Trace.myTrace("NightscoutService.as", "NS Authentication successful! Activating service");
@@ -913,7 +1699,11 @@ package services
 			serviceActive = true;
 			setupNightscoutProperties();
 			getInitialGlucoseReadings();
+			if (!BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_LOOP_OPENAPS_USER_ENABLED) != "true" && treatmentsEnabled)
+				getInitialTreatments();
 			getInitialCalibrations();
+			if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+				getNightscoutProfile();
 			activateEventListeners();
 			activateTimer();
 		}
@@ -928,6 +1718,8 @@ package services
 			activeCalibrations.length = 0;
 			activeVisualCalibrations.length = 0;
 			activeSensorStarts.length = 0;
+			activeTreatmentsUpload.length = 0;
+			activeTreatmentsDelete.length = 0;
 		}
 		
 		private static function activateTimer():void
@@ -957,8 +1749,18 @@ package services
 			nightscoutEventsURL = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) + "/api/v1/entries";
 			if (nightscoutEventsURL.indexOf('http') == -1) nightscoutEventsURL = "https://" + nightscoutEventsURL;
 			
-			nightscoutTreatmentsURL = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) + "/api/v1/treatments";
+			nightscoutTreatmentsURL = !BlueToothDevice.isFollower() ? CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) + "/api/v1/treatments" : CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_URL) + "/api/v1/treatments";
 			if (nightscoutTreatmentsURL.indexOf('http') == -1) nightscoutTreatmentsURL = "https://" + nightscoutTreatmentsURL;
+			
+			nightscoutProfileURL = !BlueToothDevice.isFollower() ? CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) + "/api/v1/profile.json" : CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_URL) + "/api/v1/profile.json";
+			if (nightscoutProfileURL.indexOf('http') == -1) nightscoutProfileURL = "https://" + nightscoutProfileURL;
+			
+			nightscoutPebbleURL = !BlueToothDevice.isFollower() ? CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_AZURE_WEBSITE_NAME) + "/pebble" : CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_URL) + "/pebble";
+			if (nightscoutPebbleURL.indexOf('http') == -1) nightscoutPebbleURL = "https://" + nightscoutPebbleURL;
+			
+			treatmentsEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_ENABLED) == "true";
+			nightscoutTreatmentsSyncEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_NIGHTSCOUT_DOWNLOAD_ENABLED) == "true";
+			pumpUserEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_LOOP_OPENAPS_USER_ENABLED) == "true";
 		}
 		
 		private static function activateEventListeners():void
@@ -966,6 +1768,7 @@ package services
 			TransmitterService.instance.addEventListener(TransmitterServiceEvent.BGREADING_EVENT, onBgreadingReceived);
 			NightscoutService.instance.addEventListener(FollowerEvent.BG_READING_RECEIVED, onBgreadingReceived);
 			CalibrationService.instance.addEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, onCalibrationReceived);
+			CalibrationService.instance.addEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, getInitialGlucoseReadings);
 			CalibrationService.instance.addEventListener(CalibrationServiceEvent.NEW_CALIBRATION_EVENT, onCalibrationReceived);
 			Spike.instance.addEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppActivated);
 			NetworkInfo.networkInfo.addEventListener(NetworkInfoEvent.CHANGE, onNetworkChange);
@@ -975,6 +1778,7 @@ package services
 			TransmitterService.instance.removeEventListener(TransmitterServiceEvent.BGREADING_EVENT, onBgreadingReceived);
 			NightscoutService.instance.removeEventListener(FollowerEvent.BG_READING_RECEIVED, onBgreadingReceived);
 			CalibrationService.instance.removeEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, onCalibrationReceived);
+			CalibrationService.instance.removeEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, getInitialGlucoseReadings);
 			CalibrationService.instance.removeEventListener(CalibrationServiceEvent.NEW_CALIBRATION_EVENT, onCalibrationReceived);
 			Spike.instance.removeEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppActivated);
 			NetworkInfo.networkInfo.removeEventListener(NetworkInfoEvent.CHANGE, onNetworkChange);
@@ -991,6 +1795,10 @@ package services
 			if (activeSensorStarts.length > 0) syncSensorStart();
 			
 			if (BlueToothDevice.isFollower()) getRemoteReadings();
+			
+			if (activeTreatmentsUpload.length > 0) syncTreatmentsUpload();
+			
+			if (activeTreatmentsDelete.length > 0) syncTreatmentsDelete();
 		}
 		
 		/**
@@ -1029,6 +1837,42 @@ package services
 				
 				setNextFollowerFetch(TIME_10_SECONDS); //Plus 10 seconds to ensure it passes the getRemoteReadings validation
 			}
+			else if (mode == MODE_TREATMENT_UPLOAD)
+			{
+				Trace.myTrace("NightscoutService.as", "in onConnectionFailed. Error uploading/updating treatment. Error: " + error.message);
+				syncTreatmentsUploadActive = false;
+			}
+			else if (mode == MODE_TREATMENT_DELETE)
+			{
+				Trace.myTrace("NightscoutService.as", "in onConnectionFailed. Error deleting treatment. Error: " + error.message);
+				syncTreatmentsDeleteActive = false;
+			}
+			else if (mode == MODE_TREATMENTS_GET)
+			{
+				if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && retriesForTreatmentsDownload < MAX_RETRIES_FOR_TREATMENTS)
+				{
+					Trace.myTrace("NightscoutService.as", "in onConnectionFailed. Error getting treatments. Retrying in 30 seconds. Error: " + error.message);
+					setTimeout(getRemoteTreatments, TIME_30_SECONDS);
+					retriesForTreatmentsDownload++;
+				}
+			}
+			else if (mode == MODE_PROFILE_GET)
+			{
+				if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+				{
+					Trace.myTrace("NightscoutService.as", "in onConnectionFailed. Error getting profile. Retrying in 30 seconds. Error: " + error.message);
+					setTimeout(getNightscoutProfile, TIME_30_SECONDS);
+				}
+			}
+			else if (mode == MODE_PEBBLE_GET)
+			{
+				if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled && pumpUserEnabled && retriesForPebbleDownload < MAX_RETRIES_FOR_TREATMENTS)
+				{
+					Trace.myTrace("NightscoutService.as", "in onConnectionFailed. Error getting pebble endpoint. Retrying in 30 seconds. Error: " + error.message);
+					setTimeout(getPebbleEndpoint, TIME_30_SECONDS);
+					retriesForPebbleDownload++;
+				}
+			}
 		}
 		
 		private static function onSettingChanged(e:SettingsServiceEvent):void
@@ -1043,6 +1887,8 @@ package services
 			{
 				if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_NIGHTSCOUT_ON) == "true")
 				{
+					setupNightscoutProperties();
+					
 					setupNightscoutProperties();
 					if (CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_URL_AND_API_SECRET_TESTED, "false"))
 						testNightscoutCredentials();
@@ -1084,20 +1930,26 @@ package services
 				)
 				{
 					deactivateFollower();
+					setupNightscoutProperties();
 					setupFollowerProperties();
 					activateFollower();
 				}
 				else
 					deactivateFollower()
 			}
-			else if (e.data == CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_OFFSET)
+			else if (e.data == CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_OFFSET || e.data == CommonSettings.COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET)
 			{
 				if (followerModeEnabled)
 				{
 					deactivateFollower();
+					setupNightscoutProperties();
 					setupFollowerProperties();
 					activateFollower();
 				}
+			}
+			else if (e.data == CommonSettings.COMMON_SETTING_TREATMENTS_NIGHTSCOUT_DOWNLOAD_ENABLED || e.data == CommonSettings.COMMON_SETTING_TREATMENTS_ENABLED || e.data == CommonSettings.COMMON_SETTING_TREATMENTS_LOOP_OPENAPS_USER_ENABLED)
+			{
+				setupNightscoutProperties();
 			}
 		}
 		
@@ -1111,7 +1963,17 @@ package services
 			if(NetworkInfo.networkInfo.isReachable() && networkChangeOcurrances > 0)
 			{
 				Trace.myTrace("NightscoutService.as", "Network is reachable again. Calling resync.");
+				
 				resync();
+				
+				//Update remote treatments so the user has updated data when returning to Spike
+				if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+				{
+					if (!pumpUserEnabled)
+						getRemoteTreatments();
+					else
+						getPebbleEndpoint();
+				}
 			}
 			else
 				networkChangeOcurrances++;
@@ -1120,7 +1982,17 @@ package services
 		private static function onAppActivated(e:Event):void
 		{
 			Trace.myTrace("NightscoutService.as", "App in foreground. Calling resync.");
+			
 			resync();
+			
+			//Update remote treatments so the user has updated data when returning to Spike
+			if (treatmentsEnabled && nightscoutTreatmentsSyncEnabled)
+			{
+				if (!pumpUserEnabled)
+					getRemoteTreatments();
+				else
+					getPebbleEndpoint();
+			}
 		}
 
 		/**
@@ -1218,10 +2090,101 @@ package services
 			_syncSensorStartActive = value;
 		}
 
+		public static function get syncTreatmentsUploadActive():Boolean
+		{
+			if (!_syncTreatmentsUploadActive)
+				return false;
+			
+			var now:Number = (new Date()).valueOf();
+			
+			if (now - syncTreatmentsUploadActiveLastChange > MAX_SYNC_TIME)
+			{
+				syncTreatmentsUploadActiveLastChange = now;
+				_syncTreatmentsUploadActive = false;
+				return false;
+			}
+			
+			return true;
+		}
+
+		public static function set syncTreatmentsUploadActive(value:Boolean):void
+		{
+			syncTreatmentsUploadActiveLastChange = new Date().valueOf();
+			_syncTreatmentsUploadActive = value;
+		}
+
+		public static function get syncTreatmentsDeleteActive():Boolean
+		{
+			if (!_syncTreatmentsDeleteActive)
+				return false;
+			
+			var now:Number = (new Date()).valueOf();
+			
+			if (now - syncTreatmentsDeleteActiveLastChange > MAX_SYNC_TIME)
+			{
+				syncTreatmentsDeleteActiveLastChange = now;
+				_syncTreatmentsDeleteActive = false;
+				return false;
+			}
+			
+			return true;
+		}
+
+		public static function set syncTreatmentsDeleteActive(value:Boolean):void
+		{
+			syncTreatmentsDeleteActiveLastChange = new Date().valueOf();
+			_syncTreatmentsDeleteActive = value;
+		}
+
+		public static function get syncTreatmentsDownloadActive():Boolean
+		{
+			if (!_syncTreatmentsDownloadActive)
+				return false;
+			
+			var now:Number = (new Date()).valueOf();
+			
+			if (now - syncTreatmentsDownloadActiveLastChange > MAX_SYNC_TIME)
+			{
+				syncTreatmentsDownloadActiveLastChange = now;
+				_syncTreatmentsDownloadActive = false;
+				return false;
+			}
+			
+			return true;
+		}
+
+		public static function set syncTreatmentsDownloadActive(value:Boolean):void
+		{
+			syncTreatmentsDownloadActiveLastChange = new Date().valueOf();
+			_syncTreatmentsDownloadActive = value;
+		}
+		
+		public static function get syncPebbleActive():Boolean
+		{
+			if (!_syncPebbleActive)
+				return false;
+			
+			var now:Number = (new Date()).valueOf();
+			
+			if (now - syncPebbleActiveLastChange > MAX_SYNC_TIME)
+			{
+				syncPebbleActiveLastChange = now;
+				_syncPebbleActive = false;
+				return false;
+			}
+			
+			return true;
+		}
+		
+		public static function set syncPebbleActive(value:Boolean):void
+		{
+			syncPebbleActiveLastChange = new Date().valueOf();
+			_syncPebbleActive = value;
+		}
+		
 		public static function get instance():NightscoutService
 		{
 			return _instance;
 		}
-
 	}
 }

@@ -1,7 +1,6 @@
 package ui.screens
-{
-	import com.freshplanet.ane.AirBackgroundFetch.BackgroundFetch;
-	
+{	
+	import flash.display.StageOrientation;
 	import flash.system.System;
 	import flash.utils.clearTimeout;
 	import flash.utils.setTimeout;
@@ -11,74 +10,90 @@ package ui.screens
 	import database.Calibration;
 	import database.CommonSettings;
 	
+	import events.CalibrationServiceEvent;
 	import events.FollowerEvent;
 	import events.SpikeEvent;
 	import events.TransmitterServiceEvent;
+	import events.TreatmentsEvent;
 	
 	import feathers.controls.Check;
 	import feathers.controls.Radio;
 	import feathers.controls.ScrollBarDisplayMode;
 	import feathers.controls.ScrollPolicy;
-	import feathers.controls.TextInput;
 	import feathers.core.ToggleGroup;
 	import feathers.events.FeathersEventType;
 	import feathers.themes.BaseMaterialDeepGreyAmberMobileTheme;
 	
 	import model.ModelLocator;
 	
-	import services.AlarmService;
+	import services.CalibrationService;
 	import services.NightscoutService;
 	import services.TransmitterService;
 	
 	import starling.core.Starling;
-	import starling.display.Shape;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
+	import starling.utils.SystemUtil;
 	
+	import treatments.Treatment;
+	import treatments.TreatmentsManager;
+	
+	import ui.AppInterface;
 	import ui.chart.DistributionChart;
 	import ui.chart.GlucoseChart;
 	import ui.chart.GraphLayoutFactory;
+	import ui.chart.PieDistributionSection;
 	import ui.screens.display.LayoutFactory;
+	import ui.shapes.SpikeLine;
 	
 	import utils.Constants;
 	import utils.DeviceInfo;
 	import utils.Trace;
 	
 	[ResourceBundle("chartscreen")]
-
+	
 	public class ChartScreen extends BaseScreen
 	{
 		//Objects
 		private var chartData:Array;
 		private var newReadingsList:Array = [];
 		private var newReadingsListFollower:Array = [];
+		private var timeRangeGroup:ToggleGroup;
 		
 		//Visual variables
 		private var glucoseChartTopPadding:int = 7;
 		private var selectedTimelineRange:Number;
 		private var drawLineChart:Boolean;
 		private var mainChartHeight:Number;
-		private var scrollChartHeight:Number;
 		private var availableScreenHeight:Number;
 		private var chartSettingsLeftRightPadding:int = 10;
 		private var chartSettingsTopPadding:int = 10;
 		private var delimitterTopPadding:int = 10;
+		private var pieTopPadding:int = 15;
+		private var pieChartHeight:Number;
 		private var displayPieChart:Boolean;
+		private var redrawChartTimeoutID:int;
+		private var isPortrait:Boolean;
 		
 		//Logical Variables
 		private var chartRequiresReload:Boolean = true;
 		private var appInBackground:Boolean = false;
 		private var queueTimeout:int = -1;
+		private var treatmentsEnabled:Boolean = false;
+		private var chartTreatmentsEnabled:Boolean = false;
+		private var displayIOBEnabled:Boolean = false;
+		private var displayCOBEnabled:Boolean = false;
 		
 		//Display Objects
 		private var glucoseChart:GlucoseChart;
 		private var pieChart:DistributionChart;
-		private var glucoseAmount:TextInput;
 		private var h24:Radio;
 		private var h12:Radio;
 		private var h6:Radio;
 		private var h3:Radio;
 		private var h1:Radio;
 		private var displayLines:Check;
+		private var delimitter:SpikeLine;
 		
 		public function ChartScreen() 
 		{
@@ -95,6 +110,10 @@ package ui.screens
 			selectedTimelineRange = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_SELECTED_TIMELINE_RANGE));
 			drawLineChart = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_DISPLAY_LINE) == "true";
 			displayPieChart = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_DISPLAY_GLUCOSE_DISTRIBUTION) == "true";
+			treatmentsEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_ENABLED) == "true";
+			chartTreatmentsEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_ON_CHART_ENABLED) == "true";
+			displayIOBEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_IOB_ENABLED) == "true";
+			displayCOBEnabled = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TREATMENTS_COB_ENABLED) == "true";
 			
 			//Event listeners
 			addEventListener(FeathersEventType.CREATION_COMPLETE, onCreation);
@@ -102,101 +121,167 @@ package ui.screens
 			Spike.instance.addEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppInForeground);
 			TransmitterService.instance.addEventListener(TransmitterServiceEvent.BGREADING_EVENT, onBgReadingReceived);
 			NightscoutService.instance.addEventListener(FollowerEvent.BG_READING_RECEIVED, onBgReadingReceivedFollower);
+			CalibrationService.instance.addEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, onInitialCalibrationReceived);
+			TreatmentsManager.instance.addEventListener(TreatmentsEvent.TREATMENT_ADDED, onTreatmentAdded);
+			TreatmentsManager.instance.addEventListener(TreatmentsEvent.TREATMENT_EXTERNALLY_MODIFIED, onTreatmentExternallyModified);
+			TreatmentsManager.instance.addEventListener(TreatmentsEvent.TREATMENT_EXTERNALLY_DELETED, onTreatmentExternallyDeleted);
+			TreatmentsManager.instance.addEventListener(TreatmentsEvent.IOB_COB_UPDATED, onUpdateIOBCOB);
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			//Scroll Policies
 			scrollBarDisplayMode = ScrollBarDisplayMode.NONE;
 			horizontalScrollPolicy = ScrollPolicy.OFF;
 			verticalScrollPolicy = ScrollPolicy.OFF;
+			
+			//Reset Transitions
+			AppInterface.instance.chartSettingsScreenItem.pushTransition = null;
+			AppInterface.instance.chartSettingsScreenItem.popTransition = null;
+			
+			//Reset Menu
+			AppInterface.instance.menu.selectedIndex = 0;
 		}
 		
 		/**
-		 * Functionality
+		 * Display Objects Creation and Positioning
 		 */
-		private function setGlucoseChart():void
-		{
-			availableScreenHeight = Constants.stageHeight - this.header.height;
-			scrollChartHeight = availableScreenHeight / 10; //10% of available screen size
-			
-			if (displayPieChart)
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
-					mainChartHeight = availableScreenHeight * 0.39; //39% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
-					mainChartHeight = availableScreenHeight * 0.5; //50% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
-					mainChartHeight = availableScreenHeight * 0.51; //51% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-					mainChartHeight = availableScreenHeight * 0.55; //55% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97)
-					mainChartHeight = availableScreenHeight * 0.615; //61.5% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_PRO_105)
-					mainChartHeight = availableScreenHeight * 0.62; //62% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_PRO_129)
-					mainChartHeight = availableScreenHeight * 0.66; //66% of available screen size
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_MINI_1_2_3_4)
-					mainChartHeight = availableScreenHeight * 0.52; //52% of available screen size
+		private function createChart():void
+		{	
+			//When in landscape mode and device is iPhone X, make the header height same as oher models, we don't need to worry about the extra status bar size
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+			{
+				if (Constants.isPortrait)
+				{
+					this.header.height = 108;
+					this.header.maxHeight = 108;	
+				}
 				else
-					mainChartHeight = availableScreenHeight * 0.5; //50% of available screen size
-			else
-				mainChartHeight = calculateChartHeight();
+				{
+					this.header.height = 78;
+					this.header.maxHeight = 78;
+				}
+			}
 			
-			//CHART
+			var availableScreenHeight:Number = Constants.stageHeight - this.header.height;
+			Constants.isPortrait ? glucoseChartTopPadding = 7 : glucoseChartTopPadding = 0;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4) glucoseChartTopPadding = 0;
+			if (glucoseChartTopPadding == 0) availableScreenHeight += 7;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
+				availableScreenHeight -= 15; //To avoid lower notch
+			
+			mainChartHeight = availableScreenHeight;
+			
+			if (Constants.isPortrait)
+			{
+				//Calculate timeline ranges and display line height
+				mainChartHeight -= chartSettingsTopPadding; //Top padding for settings
+				mainChartHeight -= calculateChartSettingsSize(); //Height of settings components
+				mainChartHeight -= delimitterTopPadding; //Bottom padding for settings
+				
+				if (displayPieChart)
+					mainChartHeight -= calculatePieChartSize();
+			}
+			
 			//Get glucose data;
 			chartData = ModelLocator.bgReadings.concat();
 			
 			//Create and setup glucose chart
-			//3h
-			glucoseChart = new GlucoseChart(selectedTimelineRange, stage.stageWidth, mainChartHeight, stage.stageWidth, scrollChartHeight);
+			var chartWidth:Number = Constants.stageWidth;
+			var chartX:Number = 0;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X && !Constants.isPortrait)
+			{
+				chartWidth -= 30;
+				if (Constants.currentOrientation == StageOrientation.ROTATED_RIGHT)
+					chartX = 30;
+			}
+			
+			glucoseChart = new GlucoseChart(selectedTimelineRange, chartWidth, mainChartHeight);
+			glucoseChart.x = Math.round(chartX);
 			glucoseChart.y = Math.round(glucoseChartTopPadding);
 			glucoseChart.dataSource = chartData;
 			glucoseChart.displayLine = drawLineChart;
 			glucoseChart.drawGraph();
+			glucoseChart.addAllTreatments();
+			var now:Number = new Date().valueOf();
+			glucoseChart.calculateTotalIOB( now );
+			glucoseChart.calculateTotalCOB( now );
 			addChild(glucoseChart);
 			
-			//Prevents Starling Line Mask Bug
-			if(drawLineChart)
+			if (Constants.isPortrait)
 			{
-				Starling.juggler.delayCall(redrawChart, 0.001);
-				chartRequiresReload = false;
+				createSettings();
+				
+				if (displayPieChart)
+					createPieChart();
 			}
 		}
 		
-		private function setChartSettings():void
+		private function redrawChart():void
 		{
-			/* Line Settings */
-			displayLines = LayoutFactory.createCheckMark(false, ModelLocator.resourceManagerInstance.getString('chartscreen','check_box_line_title'));
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				displayLines.scale = 0.8;
-			displayLines.isSelected = drawLineChart;
-			displayLines.addEventListener( Event.CHANGE, onDisplayLine );
-			addChild( displayLines );
+			if (SystemUtil.isApplicationActive)
+			{
+				chartData = glucoseChart.dataSource;
+				
+				//Remove previous chart
+				removeChild(glucoseChart);
+				glucoseChart.dispose();
+				glucoseChart = null;
+				
+				var chartWidth:Number = Constants.stageWidth;
+				var chartX:Number = 0;
+				if (Constants.deviceModel == DeviceInfo.IPHONE_X && !Constants.isPortrait)
+				{
+					chartWidth -= 30;
+					if (Constants.currentOrientation == StageOrientation.ROTATED_RIGHT)
+						chartX = 30;
+				}
+				
+				//Create new chart
+				glucoseChart = new GlucoseChart(selectedTimelineRange, chartWidth, mainChartHeight);
+				glucoseChart.x = Math.round(chartX);
+				glucoseChart.y = Math.round(glucoseChartTopPadding);
+				glucoseChart.dataSource = chartData;
+				glucoseChart.displayLine = drawLineChart;
+				glucoseChart.drawGraph();
+				glucoseChart.addAllTreatments();
+				var now:Number = new Date().valueOf();
+				glucoseChart.calculateTotalIOB( now );
+				glucoseChart.calculateTotalCOB( now );
+				addChild(glucoseChart);
+			}
+			else
+				SystemUtil.executeWhenApplicationIsActive( redrawChartForTreatmentsAndLine );
+		}
+		
+		private function createSettings():void
+		{
+			//Position Radio/Check Buttons
+			var paddingMultiplier:Number = DeviceInfo.getHorizontalPaddingMultipier();
 			
-			/* Timeline Settings */
-			var timeRangeGroup:ToggleGroup = new ToggleGroup();
+			h24.x = stage.stageWidth - h24.width - chartSettingsLeftRightPadding;
+			h24.y = glucoseChart.y + glucoseChart.height + chartSettingsTopPadding;
+			addChild(h24);
 			
-			//Create Radios
-			h1 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_1h_title'), timeRangeGroup);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				h1.scale = 0.8;
-			addChild( h1 );
-			h3 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_3h_title'), timeRangeGroup);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				h3.scale = 0.8;
-			addChild( h3 );
-			h6 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_6h_title'), timeRangeGroup);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				h6.scale = 0.8;
-			addChild( h6 );
-			h12 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_12h_title'), timeRangeGroup);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				h12.scale = 0.8;
-			addChild( h12 );
-			h24 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_24h_title'), timeRangeGroup);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				h24.scale = 0.8;
-			h24.addEventListener(FeathersEventType.CREATION_COMPLETE, onRadioCreation);
-			addChild( h24 );
+			h12.x = h24.x - h12.width - (chartSettingsLeftRightPadding * paddingMultiplier);
+			h12.y = h24.y;
+			addChild(h12);
 			
-			//Calculate selected radio
+			h6.x = h12.x - h6.width - (chartSettingsLeftRightPadding * paddingMultiplier);
+			h6.y = h24.y;
+			addChild(h6);
+			
+			h3.x = h6.x - h3.width - (chartSettingsLeftRightPadding * paddingMultiplier);
+			h3.y = h24.y;
+			addChild(h3);
+			
+			h1.x = h3.x - h1.width - (chartSettingsLeftRightPadding * paddingMultiplier);
+			h1.y = h24.y;
+			addChild(h1);
+			
+			displayLines.x = chartSettingsLeftRightPadding;
+			displayLines.y = h24.y;
+			addChild(displayLines);
+			
+			//Radio Buttons Group
 			if (selectedTimelineRange == GlucoseChart.TIMELINE_1H)
 				timeRangeGroup.selectedItem = h1;
 			else if (selectedTimelineRange == GlucoseChart.TIMELINE_3H)
@@ -212,157 +297,28 @@ package ui.screens
 			timeRangeGroup.addEventListener( Event.CHANGE, onTimeRangeChange );
 		}
 		
-		private function redrawChart():void
+		private function createPieChart():void
 		{
-			//var previousData:Array = glucoseChart.dataSource.concat();
-			chartData = glucoseChart.dataSource;
+			delimitter = GraphLayoutFactory.createHorizontalLine(Constants.stageWidth, 1, 0x282a32);
+			delimitter.y = h24.y + h24.height + delimitterTopPadding;
+			addChild(delimitter);
 			
-			//Remove previous chart
-			removeChild(glucoseChart);
-			glucoseChart.dispose();
-			glucoseChart = null;
-			
-			//Create new chart
-			glucoseChart = new GlucoseChart(selectedTimelineRange, stage.stageWidth, mainChartHeight, stage.stageWidth, scrollChartHeight);
-			//glucoseChart.dataSource = previousData.concat();
-			glucoseChart.dataSource = chartData;
-			glucoseChart.displayLine = drawLineChart;
-			glucoseChart.drawGraph();
-			glucoseChart.y = glucoseChartTopPadding;
-			addChild(glucoseChart);
-			
-			//previousData.length = 0;
-			//previousData = null;
+			pieChart = new DistributionChart((pieChartHeight / 2), chartData);
+			pieChart.y = Math.round(delimitter.y + delimitter.height + pieTopPadding);
+			pieChart.x = 10;
+			addChild(pieChart);
 		}
 		
-		private function calculateChartHeight():Number
+		private function redrawChartForTreatmentsAndLine():void
 		{
-			//Calculate Multipliers
-			var userGlucoseFontMultiplier:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_BG_FONT_SIZE));
-			var userTimeAgoFontMultiplier:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_TIMEAGO_FONT_SIZE));
-			var higherMultiplier:Number;
-			if (userGlucoseFontMultiplier >= userTimeAgoFontMultiplier)
-				higherMultiplier = userGlucoseFontMultiplier;
-			else
-				higherMultiplier = userTimeAgoFontMultiplier;
-			
-			//Chart Top Margin
-			var topMargin:int = Math.round(glucoseChartTopPadding);
-			
-			//Main Chart Internal Top Padding
-			var chartDisplayMargin:Number = 50 * higherMultiplier;
-			
-			//Scroller Internal Top Padding
-			var scrollerTopPadding:int = 5;
-			
-			//Settings (Radio Buttons Height)
-			var settingsHeight:int = 20;
-			
-			//Calculate Device Specific Adjustment
-			var deviceAdjustement:Number;
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
-				deviceAdjustement = 0;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
-				deviceAdjustement = 6 * higherMultiplier;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8)
-				deviceAdjustement = 12 * higherMultiplier;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
-				deviceAdjustement = 20 * higherMultiplier;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
-				deviceAdjustement = 35 * higherMultiplier;
-			
-			//Return Calculated Chart Height
-			return availableScreenHeight - topMargin - chartDisplayMargin - scrollerTopPadding - scrollChartHeight - chartSettingsTopPadding - settingsHeight - deviceAdjustement;
-		}
-		
-		/**
-		 * Event Handlers
-		 */
-		private function onBgReadingReceivedFollower(e:FollowerEvent):void
-		{
-			Trace.myTrace("ChartScreen.as", "on onBgReadingReceivedFollower!");
-			
-			if (!BlueToothDevice.isFollower())
-				Trace.myTrace("ChartScreen.as", "User is not a follower. Ignoring");
-				
-			try
-			{
-				var readings:Array = e.data;
-				if (readings != null && readings.length > 0)
-				{
-					if (BackgroundFetch.appIsInForeground() && glucoseChart != null && Constants.appInForeground)
-					{
-						glucoseChart.addGlucose(readings);
-						if (displayPieChart)
-							pieChart.drawChart();
-					}
-					else
-					{
-						newReadingsListFollower = newReadingsListFollower.concat(readings);
-					}		
-				}	
-				
-				//AlarmService.cancelInactiveAlert();
-			} 
-			catch(error:Error) 
-			{
-				Trace.myTrace("ChartScreen.as", "Error adding glucose to chart. Error: " + error.message);
-			}
-		}
-		
-		private function onBgReadingReceived(event:TransmitterServiceEvent):void
-		{
-			Trace.myTrace("ChartScreen.as", "on onBgReadingReceived!");
-			
-			if (BlueToothDevice.isFollower())
-				Trace.myTrace("ChartScreen.as", "User is a follower. Ignoring");
-			
-			try
-			{
-				var reading:BgReading = BgReading.lastNoSensor();
-				
-				if(reading == null || reading.calculatedValue == 0 || Calibration.allForSensor().length < 2)
-				{
-					Trace.myTrace("ChartScreen.as", "Bad Reading or not enough calibrations. Not adding it to the chart.");
-					return;
-				}
-				
-				if (!appInBackground && glucoseChart != null && Constants.appInForeground)
-				{
-					Trace.myTrace("ChartScreen.as", "Adding reading to the chart: Value: " + reading.calculatedValue);
-					glucoseChart.addGlucose([reading]);
-					if (displayPieChart)
-						pieChart.drawChart();
-				}
-				else
-				{
-					Trace.myTrace("ChartScreen.as", "Adding reading to the queue. Will be rendered when the app is in the foreground. Reading: " + reading.calculatedValue);
-					newReadingsList.push(reading);
-				}
-				
-				//AlarmService.cancelInactiveAlert();
-			} 
-			catch(error:Error) 
-			{
-				Trace.myTrace("ChartScreen.as", "Error adding readings to chart. Error: " + error.message)
-			}
-		}
-		
-		private function onAppInBackground (e:SpikeEvent):void
-		{
-			appInBackground = true;
-		}
-		
-		private function onAppInForeground (e:SpikeEvent):void
-		{
-			Starling.juggler.delayCall(processQueue, 0.2);
+			redrawChartTimeoutID = setTimeout(redrawChart, 1500);
 		}
 		
 		private function processQueue():void
 		{
 			clearTimeout(queueTimeout);
 			
-			if(!BackgroundFetch.appIsInForeground())
+			if(!SystemUtil.isApplicationActive)
 			{
 				queueTimeout = setTimeout(processQueue, 150); //retry in 150ms
 				
@@ -431,10 +387,229 @@ package ui.screens
 			}
 		}
 		
+		/**
+		 * Display Objects Size Calculators
+		 */
+		private function calculateChartSettingsSize():Number
+		{
+			var chartSettingsHeight:Number = 0;
+			
+			/* Line Settings */
+			displayLines = LayoutFactory.createCheckMark(false, ModelLocator.resourceManagerInstance.getString('chartscreen','check_box_line_title'));
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				displayLines.scale = 0.8;
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105 || Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+				displayLines.scale = 1.4;
+			displayLines.isSelected = drawLineChart;
+			displayLines.addEventListener( Event.CHANGE, onDisplayLine );
+			displayLines.validate();
+			
+			chartSettingsHeight = displayLines.height;
+			
+			/* Timeline Settings */
+			timeRangeGroup = new ToggleGroup();
+			
+			//Create Radios
+			h1 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_1h_title'), timeRangeGroup);
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				h1.scale = 0.8;
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105 || Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+				h1.scale = 1.4;
+			h1.validate();
+			
+			h3 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_3h_title'), timeRangeGroup);
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				h3.scale = 0.8;
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105 || Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+				h3.scale = 1.4;
+			h3.validate();
+			
+			h6 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_6h_title'), timeRangeGroup);
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				h6.scale = 0.8;
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105 || Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+				h6.scale = 1.4;
+			h6.validate();
+			
+			h12 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_12h_title'), timeRangeGroup);
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				h12.scale = 0.8;
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105 || Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+				h12.scale = 1.4;
+			h12.validate();
+			
+			h24 = LayoutFactory.createRadioButton(ModelLocator.resourceManagerInstance.getString('chartscreen','radio_button_24h_title'), timeRangeGroup);
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				h24.scale = 0.8;
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105 || Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+				h24.scale = 1.4;
+			h24.validate();
+			
+			return chartSettingsHeight;
+		}
+		
+		private function calculatePieChartSize():Number
+		{
+			var pieChartTotalHeight:Number = 0;
+			
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				pieTopPadding = 10;
+			
+			pieChartTotalHeight += pieTopPadding * 2;
+			
+			var dummyPieChartStatsSection:PieDistributionSection = new PieDistributionSection(100, 30, 0x000000, 0x000000, 0x000000);
+			dummyPieChartStatsSection.title.text = "N/A";
+			dummyPieChartStatsSection.title.validate();
+			dummyPieChartStatsSection.message.text = "N/A";
+			dummyPieChartStatsSection.message.validate();
+			
+			var sectionMultiplier:Number = 3;
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+				sectionMultiplier = 2.5;
+			
+			pieChartHeight = (sectionMultiplier * dummyPieChartStatsSection.title.height) + (sectionMultiplier * dummyPieChartStatsSection.message.height);
+			
+			dummyPieChartStatsSection.dispose();
+			dummyPieChartStatsSection = null;
+			
+			pieChartTotalHeight += pieChartHeight;
+			
+			return pieChartTotalHeight;
+		}
+		
+		/**
+		 * Event Handlers
+		 */
 		private function onCreation(event:Event):void
 		{
-			setGlucoseChart();
-			setChartSettings();
+			createChart();
+			redrawChartForTreatmentsAndLine();
+		}
+		
+		private function onBgReadingReceivedFollower(e:FollowerEvent):void
+		{
+			Trace.myTrace("ChartScreen.as", "on onBgReadingReceivedFollower!");
+			
+			if (!BlueToothDevice.isFollower())
+				Trace.myTrace("ChartScreen.as", "User is not a follower. Ignoring");
+			
+			try
+			{
+				var readings:Array = e.data;
+				if (readings != null && readings.length > 0)
+				{
+					if (glucoseChart != null && SystemUtil.isApplicationActive)
+					{
+						glucoseChart.addGlucose(readings);
+						if (displayPieChart)
+							pieChart.drawChart();
+					}
+					else
+					{
+						newReadingsListFollower = newReadingsListFollower.concat(readings);
+					}		
+				}	
+			} 
+			catch(error:Error) 
+			{
+				Trace.myTrace("ChartScreen.as", "Error adding glucose to chart. Error: " + error.message);
+			}
+		}
+		
+		private function onBgReadingReceived(event:TransmitterServiceEvent):void
+		{
+			Trace.myTrace("ChartScreen.as", "on onBgReadingReceived!");
+			
+			if (BlueToothDevice.isFollower())
+			{
+				Trace.myTrace("ChartScreen.as", "User is a follower. Ignoring");
+				return;
+			}
+			
+			try
+			{
+				var reading:BgReading = BgReading.lastNoSensor();
+				
+				if(reading == null || reading.calculatedValue == 0 || Calibration.allForSensor().length < 2)
+				{
+					Trace.myTrace("ChartScreen.as", "Bad Reading or not enough calibrations. Not adding it to the chart.");
+					return;
+				}
+				
+				if (glucoseChart != null && SystemUtil.isApplicationActive)
+				{
+					Trace.myTrace("ChartScreen.as", "Adding reading to the chart: Value: " + reading.calculatedValue);
+					glucoseChart.addGlucose([reading]);
+					if (displayPieChart)
+						pieChart.drawChart();
+				}
+				else
+				{
+					Trace.myTrace("ChartScreen.as", "Adding reading to the queue. Will be rendered when the app is in the foreground. Reading: " + reading.calculatedValue);
+					newReadingsList.push(reading);
+				}
+			} 
+			catch(error:Error) 
+			{
+				Trace.myTrace("ChartScreen.as", "Error adding readings to chart. Error: " + error.message)
+			}
+		}
+		
+		private function onInitialCalibrationReceived(e:CalibrationServiceEvent):void
+		{
+			onBgReadingReceived(null);
+		}
+		
+		private function onUpdateIOBCOB(e:TreatmentsEvent):void
+		{
+			if (glucoseChart == null || !SystemUtil.isApplicationActive)
+				return;
+			
+			Trace.myTrace("ChartScreen.as", "Updating IOB/COB");
+			
+			var now:Number = new Date().valueOf();
+			SystemUtil.executeWhenApplicationIsActive(glucoseChart.calculateTotalIOB, now);
+			SystemUtil.executeWhenApplicationIsActive(glucoseChart.calculateTotalCOB, now);
+		}
+		
+		private function onTreatmentAdded(e:TreatmentsEvent):void
+		{
+			var treatment:Treatment = e.treatment;
+			if (treatment != null && glucoseChart != null)
+			{
+				Trace.myTrace("ChartScreen.as", "Adding treatment to the chart: Type: " + treatment.type);
+				SystemUtil.executeWhenApplicationIsActive(glucoseChart.addTreatment, treatment);
+			}
+		}
+		
+		private function onTreatmentExternallyModified(e:TreatmentsEvent):void
+		{
+			var treatment:Treatment = e.treatment;
+			if (treatment != null && glucoseChart != null)
+			{
+				Trace.myTrace("ChartScreen.as", "Sending externally modified treatment to the chart: Type: " + treatment.type);
+				SystemUtil.executeWhenApplicationIsActive(glucoseChart.updateExternallyModifiedTreatment, treatment);
+			}
+		}
+		
+		private function onTreatmentExternallyDeleted(e:TreatmentsEvent):void
+		{
+			var treatment:Treatment = e.treatment;
+			if (treatment != null && glucoseChart != null)
+			{
+				Trace.myTrace("ChartScreen.as", "Sending externally deleted treatment to the chart: Type: " + treatment.type);
+				SystemUtil.executeWhenApplicationIsActive(glucoseChart.updateExternallyDeletedTreatment, treatment);
+			}
+		}
+		
+		private function onAppInBackground (e:SpikeEvent):void
+		{
+			appInBackground = true;
+		}
+		
+		private function onAppInForeground (e:SpikeEvent):void
+		{
+			SystemUtil.executeWhenApplicationIsActive( processQueue );
 		}
 		
 		private function onTimeRangeChange(event:Event):void
@@ -476,49 +651,6 @@ package ui.screens
 				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_CHART_SELECTED_TIMELINE_RANGE, String(selectedTimelineRange));
 		}
 		
-		private function onRadioCreation(event:Event):void
-		{
-			//Position Radio Buttons
-			var paddingMultiplier:Number = DeviceInfo.getHorizontalPaddingMultipier();
-			
-			h24.x = stage.stageWidth - h24.width - chartSettingsLeftRightPadding;
-			h24.y = glucoseChart.y + glucoseChart.height + chartSettingsTopPadding;
-			
-			h12.x = h24.x - h12.width - (chartSettingsLeftRightPadding * paddingMultiplier);
-			h12.y = h24.y;
-			
-			h6.x = h12.x - h6.width - (chartSettingsLeftRightPadding * paddingMultiplier);
-			h6.y = h24.y;
-			
-			h3.x = h6.x - h3.width - (chartSettingsLeftRightPadding * paddingMultiplier);
-			h3.y = h24.y;
-			
-			h1.x = h3.x - h1.width - (chartSettingsLeftRightPadding * paddingMultiplier);
-			h1.y = h24.y;
-			
-			displayLines.x = chartSettingsLeftRightPadding;
-			displayLines.y = h24.y;
-			
-			//Add 24H Glucose distributon to the screen
-			if (displayPieChart)
-			{
-				var delimitter:Shape = GraphLayoutFactory.createHorizontalLine(Constants.stageWidth, 1, 0x282a32);
-				delimitter.y = h24.y + h24.height + delimitterTopPadding;
-				addChild(delimitter);
-				
-				var lastAvailableSpace:Number = availableScreenHeight - glucoseChartTopPadding - glucoseChart.height - chartSettingsTopPadding - h24.height - delimitterTopPadding - delimitter.height;
-				var pieHeight:Number = (lastAvailableSpace * 0.8) / 2; //80% of availables space
-				var pieTopPadding:Number = Math.round((lastAvailableSpace * 0.3) / 2);
-				
-				//Pie Chart
-				//pieChart = new DistributionChart(pieHeight, glucoseChart.dataSource);
-				pieChart = new DistributionChart(pieHeight, chartData);
-				pieChart.y = Math.round(h24.y + h24.height + delimitterTopPadding + delimitter.height + pieTopPadding);
-				pieChart.x = 10;
-				addChild(pieChart);
-			}
-		}
-		
 		private function onDisplayLine(event:Event):void
 		{
 			var check:Check = Check( event.currentTarget );
@@ -526,11 +658,6 @@ package ui.screens
 			{
 				glucoseChart.showLine();
 				drawLineChart = true;
-				if(chartRequiresReload)
-				{
-					chartRequiresReload = false;
-					redrawChart();
-				}
 			}
 			else
 			{
@@ -545,71 +672,69 @@ package ui.screens
 				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_CHART_DISPLAY_LINE, "false");
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			SystemUtil.executeWhenApplicationIsActive(disposeDisplayObjects);
+			SystemUtil.executeWhenApplicationIsActive(createChart);
+		}
+		
 		/**
 		 * Utility
 		 */
-		override public function dispose():void
+		private function disposeDisplayObjects():void
 		{
-			/* Event Listeners */
-			Spike.instance.removeEventListener(SpikeEvent.APP_IN_BACKGROUND, onAppInBackground);
-			Spike.instance.removeEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppInForeground);
-			TransmitterService.instance.removeEventListener(TransmitterServiceEvent.BGREADING_EVENT, onBgReadingReceived);
-			NightscoutService.instance.removeEventListener(FollowerEvent.BG_READING_RECEIVED, onBgReadingReceivedFollower);
-			removeEventListener(FeathersEventType.CREATION_COMPLETE, onCreation);
-			
-			/* Objects */
-			chartData.length = 0;
-			chartData = null;
-			newReadingsList.length = 0;
-			newReadingsList = null;
-			
 			/* Display Objects */
 			if (glucoseChart != null)
 			{
-				removeChild(glucoseChart);
+				glucoseChart.removeFromParent();
 				glucoseChart.dispose();
 				glucoseChart = null;
 			}
 			
 			if (pieChart != null)
 			{
-				removeChild(pieChart);
+				pieChart.removeFromParent();
 				pieChart.dispose();
 				pieChart = null;
 			}
 			
+			if (timeRangeGroup != null)
+			{
+				timeRangeGroup.removeEventListener( Event.CHANGE, onTimeRangeChange );
+				timeRangeGroup = null;
+			}
+			
 			if (h24 != null)
 			{
-				h24.removeEventListener(FeathersEventType.CREATION_COMPLETE, onRadioCreation);
-				removeChild(h24);
+				h24.removeFromParent();
 				h24.dispose();
 				h24 = null;
 			}
 			
 			if (h12 != null)
 			{
-				removeChild(h12);
+				h12.removeFromParent();
 				h12.dispose();
 				h12 = null;
 			}
 			
 			if (h6 != null)
 			{
-				removeChild(h6);
+				h6.removeFromParent();
 				h6.dispose();
 				h6 = null;
 			}
 			
 			if (h3 != null)
 			{
-				removeChild(h3);
+				h3.removeFromParent();
 				h3.dispose();
 				h3 = null;
 			}
 			
 			if (h1 != null)
 			{
-				removeChild(h1);
+				h1.removeFromParent();
 				h1.dispose();
 				h1 = null;
 			}
@@ -617,9 +742,51 @@ package ui.screens
 			if (displayLines != null)
 			{
 				displayLines.removeEventListener( Event.CHANGE, onDisplayLine );
-				removeChild(displayLines);
+				displayLines.removeFromParent();
 				displayLines.dispose();
 				displayLines = null;
+			}
+			
+			if (delimitter != null)
+			{
+				delimitter.removeFromParent();
+				delimitter.dispose();
+				delimitter = null;
+			}
+		}
+		
+		override public function dispose():void
+		{
+			/* Timers */
+			clearTimeout(redrawChartTimeoutID);
+
+			/* Event Listeners */
+			Spike.instance.removeEventListener(SpikeEvent.APP_IN_BACKGROUND, onAppInBackground);
+			Spike.instance.removeEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppInForeground);
+			TransmitterService.instance.removeEventListener(TransmitterServiceEvent.BGREADING_EVENT, onBgReadingReceived);
+			CalibrationService.instance.removeEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, onInitialCalibrationReceived);
+			NightscoutService.instance.removeEventListener(FollowerEvent.BG_READING_RECEIVED, onBgReadingReceivedFollower);
+			removeEventListener(FeathersEventType.CREATION_COMPLETE, onCreation);
+			TreatmentsManager.instance.removeEventListener(TreatmentsEvent.TREATMENT_ADDED, onTreatmentAdded);
+			TreatmentsManager.instance.removeEventListener(TreatmentsEvent.TREATMENT_EXTERNALLY_MODIFIED, onTreatmentExternallyModified);
+			TreatmentsManager.instance.removeEventListener(TreatmentsEvent.TREATMENT_EXTERNALLY_DELETED, onTreatmentExternallyDeleted);
+			TreatmentsManager.instance.removeEventListener(TreatmentsEvent.IOB_COB_UPDATED, onUpdateIOBCOB);
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
+			/* Display Objects */
+			SystemUtil.executeWhenApplicationIsActive(disposeDisplayObjects);
+			
+			/* Objects */
+			if (chartData != null)
+			{
+				chartData.length = 0;
+				chartData = null;
+			}
+			
+			if (newReadingsList != null)
+			{
+				newReadingsList.length = 0;
+				newReadingsList = null;
 			}
 			
 			super.dispose();

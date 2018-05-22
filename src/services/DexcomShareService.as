@@ -11,11 +11,13 @@ package services
 	import flash.net.URLLoader;
 	import flash.net.URLRequestMethod;
 	import flash.utils.Timer;
+	import flash.utils.setTimeout;
 	
 	import database.BgReading;
 	import database.BlueToothDevice;
 	import database.CommonSettings;
 	
+	import events.CalibrationServiceEvent;
 	import events.DexcomShareEvent;
 	import events.FollowerEvent;
 	import events.SettingsServiceEvent;
@@ -34,7 +36,9 @@ package services
 	
 	import ui.popups.AlertManager;
 	
+	import utils.Constants;
 	import utils.DeviceInfo;
+	import utils.SpikeJSON;
 	import utils.Trace;
 	
 	[ResourceBundle("dexcomshareservice")]
@@ -66,7 +70,10 @@ package services
 		private static const MAX_SYNC_TIME:Number = 45 * 1000; //45 seconds
 		private static const RETRY_TIME_FOR_SERVER_ERRORS:Number = 4.5 * 60 * 1000; //4.5 minutes
 		private static const RETRY_TIME_FOR_MAX_AUTHENTICATION_RETRIES:Number = 10 * 60 * 1000;
-		private static const TIME_6_MINUTES:int = 6 * 60 * 1000;
+		private static const MAX_RETRIES_FOR_MONITORING_SESSION_NOT_ACTIVE:int = 5;
+		private static const MAX_RETRIES_FOR_SESSION_NOT_VALID:int = 10;
+		private static const TIME_1_MINUTE:int = 60 * 1000;
+		private static const TIME_5_SECONDS:int = 5000;
 		
 		/* Data Objects */
 		private static var activeGlucoseReadings:Array = [];
@@ -74,7 +81,7 @@ package services
 		
 		/* Logical Variables */
 		private static var serviceStarted:Boolean = false;
-		private static var serviceActive:Boolean = false;
+		public static var serviceActive:Boolean = false;
 		private static var externalAuthenticationCall:Boolean = false;
 		public static var ignoreSettingsChanged:Boolean = false;
 		private static var _syncGlucoseReadingsActive:Boolean;
@@ -92,6 +99,8 @@ package services
 		private static var nextFunctionToCall:Function = null;
 		private static var timeStampOfLastLoginAttemptSinceJSONParsingErrorReceived:Number = 0;
 		private static var timeStampOfLastSSO_AuthenticateMaxAttemptsExceeed:Number = 0;
+		private static var retriesForSessionNotActive:int = 0;
+		private static var retriesForSessionNotValid:int = 0;
 		
 		public function DexcomShareService()
 		{
@@ -136,7 +145,7 @@ package services
 			{
 				AlertManager.showSimpleAlert
 				(
-					DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+					Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 					ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_network_unreachable"),
 					60
 				);
@@ -150,7 +159,8 @@ package services
 			authParameters["applicationId"] = APPLICATION_ID;
 			authParameters["password"] = accountPassword;
 			
-			NetworkConnector.createDSConnector(dexcomShareURL + "General/LoginPublisherAccountByName", URLRequestMethod.POST, null, JSON.stringify(authParameters), MODE_TEST_CREDENTIALS, onTestCredentialsComplete, onConnectionFailed);
+			//NetworkConnector.createDSConnector(dexcomShareURL + "General/LoginPublisherAccountByName", URLRequestMethod.POST, null, JSON.stringify(authParameters), MODE_TEST_CREDENTIALS, onTestCredentialsComplete, onConnectionFailed);
+			NetworkConnector.createDSConnector(dexcomShareURL + "General/LoginPublisherAccountByName", URLRequestMethod.POST, null, SpikeJSON.stringify(authParameters), MODE_TEST_CREDENTIALS, onTestCredentialsComplete, onConnectionFailed);
 		}
 		
 		private static function onTestCredentialsComplete(e:flash.events.Event):void
@@ -175,13 +185,16 @@ package services
 					{
 						
 						AlertManager.showSimpleAlert(
-							DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+							Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 							ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_ok"),
 							Number.NaN,
 							null,
 							HorizontalAlign.CENTER
 						);
 					}
+					
+					if (!serviceActive)
+						activateService();
 					
 					//Perform next steps
 					if (nextFunctionToCall != null)
@@ -193,6 +206,9 @@ package services
 				else
 				{
 					Trace.myTrace("DexcomShareService.as", "Authentication error! Trying to parse error...");
+					
+					if (serviceActive)
+						deactivateService();
 					
 					var responseInfo:Object = parseDexcomError(response, null);
 					
@@ -212,7 +228,7 @@ package services
 									
 									AlertManager.showSimpleAlert
 										(
-											DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+											Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 											ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_account_name_not_found"),
 											60,
 											null,
@@ -228,7 +244,7 @@ package services
 									
 									AlertManager.showSimpleAlert
 										(
-											DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+											Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 											ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_invalid_password"),
 											60,
 											null,
@@ -245,7 +261,7 @@ package services
 									
 									AlertManager.showSimpleAlert
 										(
-											DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+											Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 											ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_max_login_attempts_excceded"),
 											60
 										);
@@ -270,7 +286,7 @@ package services
 							Trace.myTrace("DexcomShareService.as", "Displaying generic error message to the user.");
 							
 							AlertManager.showSimpleAlert(
-								DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+								Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 								ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_error") + " " + ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_error_unknown")
 							);
 						}
@@ -284,7 +300,7 @@ package services
 				{
 					//Alert User
 					AlertManager.showSimpleAlert(
-						DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
+						Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title") : ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_title_x"),
 						ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_error") + " " + ModelLocator.resourceManagerInstance.getString("dexcomshareservice","credential_test_alert_message_service_unavailable")
 					);
 				}
@@ -308,7 +324,7 @@ package services
 			return newReading;
 		}
 		
-		private static function getInitialGlucoseReadings():void
+		private static function getInitialGlucoseReadings(e:flash.events.Event = null):void
 		{
 			lastGlucoseReadingsSyncTimeStamp = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DEXCOMSHARE_SYNC_TIMESTAMP));
 			var now:Number = (new Date()).valueOf();
@@ -357,7 +373,8 @@ package services
 			data.SN = transmitterID;
 			data.TA = -5;
 			
-			NetworkConnector.createDSConnector(dexcomShareURL + "Publisher/PostReceiverEgvRecords", URLRequestMethod.POST, dexcomShareSessionID, JSON.stringify(data), MODE_GLUCOSE_READING, onUploadGlucoseReadingsComplete, onConnectionFailed);
+			//NetworkConnector.createDSConnector(dexcomShareURL + "Publisher/PostReceiverEgvRecords", URLRequestMethod.POST, dexcomShareSessionID, JSON.stringify(data), MODE_GLUCOSE_READING, onUploadGlucoseReadingsComplete, onConnectionFailed);
+			NetworkConnector.createDSConnector(dexcomShareURL + "Publisher/PostReceiverEgvRecords", URLRequestMethod.POST, dexcomShareSessionID, SpikeJSON.stringify(data), MODE_GLUCOSE_READING, onUploadGlucoseReadingsComplete, onConnectionFailed);
 		}
 		
 		private static function onUploadGlucoseReadingsComplete(e:flash.events.Event):void
@@ -401,13 +418,16 @@ package services
 					}
 					else if (errorCode == "SessionNotValid" || errorCode == "SessionIdNotFound")
 					{
-						dexcomShareSessionID = "";
-						nextFunctionToCall = syncGlucoseReadings;
-						login();
+						if (retriesForSessionNotValid <= MAX_RETRIES_FOR_SESSION_NOT_VALID)
+						{
+							retriesForSessionNotValid++;
+							dexcomShareSessionID = "";
+							nextFunctionToCall = syncGlucoseReadings;
+							setTimeout(login, 5000); //5 seconds
+						}
 					}
 					else if (errorCode == "MonitoringSessionNotActive") 
 					{
-						trace("ENTREI");
 						NetworkConnector.createDSConnector(dexcomShareURL + "Publisher/StartRemoteMonitoringSession?sessionId=" + escape(dexcomShareSessionID) + "&serialNumber=" + escape(transmitterID), URLRequestMethod.POST, null, null, MODE_GLUCOSE_READING, onStartRemoteMonitoringResponse, onConnectionFailed);
 					}
 					else if (errorCode == "DuplicateEgvPosted") 
@@ -485,14 +505,19 @@ package services
 			else
 				latestGlucoseReading= BgReading.lastWithCalculatedValue();
 			
-			if(latestGlucoseReading == null)
+			if(latestGlucoseReading == null || (latestGlucoseReading.calculatedValue == 0 && latestGlucoseReading.calibration == null) || latestGlucoseReading.calculatedValue == 0)
 				return;
 			
 			activeGlucoseReadings.push(createGlucoseReading(latestGlucoseReading));
 			
-			//Only start uploading bg reading if it's newer than 6 minutes. Blucon sends historical data so we don't want to start upload for every reading. Just start upload on the last readings. The previous readings will still be uploaded because the reside in the queue array.
-			if (new Date().valueOf() - latestGlucoseReading.timestamp < TIME_6_MINUTES)
-				syncGlucoseReadings();
+			//Only start uploading bg reading if it's newer than 1 minute. Blucon sends historical data so we don't want to start upload for every reading. Just start upload on the last readings. The previous readings will still be uploaded because the reside in the queue array.
+			if (new Date().valueOf() - latestGlucoseReading.timestamp < TIME_1_MINUTE)
+			{
+				if (!BlueToothDevice.canDoBackfill()) //No backfill transmitter, sync immediately
+					syncGlucoseReadings();
+				else //Backfill transmitter. Wait 5 seconds to process all data
+					setTimeout(syncGlucoseReadings, TIME_5_SECONDS);
+			}
 		}
 		
 		/**
@@ -500,9 +525,11 @@ package services
 		 */
 		private static function onStartRemoteMonitoringResponse(e:flash.events.Event):void
 		{
+			retriesForSessionNotActive ++;
+			
 			var loader:URLLoader = e.currentTarget as URLLoader;
 			
-			if (String(loader.data).indexOf("MonitoredReceiverSerialNumberDoesNotMatch") == -1)
+			if (String(loader.data).indexOf("MonitoredReceiverSerialNumberDoesNotMatch") == -1 && String(loader.data).indexOf("NotAssigned") == -1 && String(loader.data).indexOf("MonitoredReceiverNotAssigned") == -1 && retriesForSessionNotActive < MAX_RETRIES_FOR_MONITORING_SESSION_NOT_ACTIVE)
 				syncGlucoseReadings();
 			else
 			{
@@ -831,6 +858,7 @@ package services
 			NightscoutService.instance.addEventListener(FollowerEvent.BG_READING_RECEIVED, onBgreadingReceived);
 			Spike.instance.addEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppActivated);
 			NetworkInfo.networkInfo.addEventListener(NetworkInfoEvent.CHANGE, onNetworkChange);
+			CalibrationService.instance.addEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, getInitialGlucoseReadings);
 		}
 		private static function deactivateEventListeners():void
 		{
@@ -838,6 +866,7 @@ package services
 			NightscoutService.instance.removeEventListener(FollowerEvent.BG_READING_RECEIVED, onBgreadingReceived);
 			Spike.instance.removeEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppActivated);
 			NetworkInfo.networkInfo.removeEventListener(NetworkInfoEvent.CHANGE, onNetworkChange);
+			CalibrationService.instance.removeEventListener(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT, getInitialGlucoseReadings);
 		}
 		
 		private static function activateTimer():void
@@ -863,7 +892,8 @@ package services
 			
 			try
 			{
-				responseInfo = JSON.parse(response);
+				//responseInfo = JSON.parse(response);
+				responseInfo = SpikeJSON.parse(response);
 			} 
 			catch(error:Error) 
 			{

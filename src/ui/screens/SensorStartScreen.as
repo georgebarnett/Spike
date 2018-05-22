@@ -28,6 +28,7 @@ package ui.screens
 	import starling.core.Starling;
 	import starling.display.DisplayObject;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.AppInterface;
 	import ui.popups.AlertManager;
@@ -58,6 +59,8 @@ package ui.screens
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			/* Display Initial Alert */
 			if( !TutorialService.isActive && !TutorialService.ninethStepActive )
@@ -91,7 +94,7 @@ package ui.screens
 				ModelLocator.resourceManagerInstance.getString('sensorscreen','sensor_start_alert_title'),
 				ModelLocator.resourceManagerInstance.getString('sensorscreen','sensor_start_alert_message')
 			);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 			{
 				alert.maxWidth = 270;
 				alert.height = 320;
@@ -184,7 +187,7 @@ package ui.screens
 			
 			/* Define Alert Message */
 			var alertMessage:String;
-			if (timeOfCalibration > 0 && !BlueToothDevice.isTypeLimitter()) {
+			if (timeOfCalibration > 0 && !BlueToothDevice.knowsFSLAge()) {
 				alertMessage = ModelLocator.resourceManagerInstance.getString('sensorscreen',"sensor_start_alert_message_wait_prefix");
 				alertMessage += " " + dateFormatterForSensorStartWarning.format(new Date(actualTime + timeOfCalibration)) + " ";
 				alertMessage += ModelLocator.resourceManagerInstance.getString('sensorscreen',"sensor_start_alert_message_wait_suffix");
@@ -201,18 +204,33 @@ package ui.screens
 				onBackButtonTriggered
 			);
 			alert.height = 425;
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 			{
 				alert.maxWidth = 270;
 				alert.height = 490;
 			}
+			
+			alert.addEventListener(Event.CLOSE, onClose);
+			
+			function onClose(e:Event):void
+			{
+				if ((TutorialService.isActive || TutorialService.eleventhStepActive) && BlueToothDevice.isDexcomG5())
+					TutorialService.eleventhStep();
+			}
 		}	
+		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+		}
 		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if( TutorialService.isActive && TutorialService.ninethStepActive)
 			{
 				removeEventListener(FeathersEventType.TRANSITION_IN_COMPLETE, onScreenIn)
@@ -221,6 +239,7 @@ package ui.screens
 			
 			if (dateSpinner != null)
 			{
+				dateSpinner.removeFromParent();
 				dateSpinner.dispose();
 				dateSpinner = null;
 			}
@@ -228,12 +247,14 @@ package ui.screens
 			if (startButton != null)
 			{
 				startButton.removeEventListener(Event.TRIGGERED, onSensorStarted);
+				startButton.removeFromParent();
 				startButton.dispose();
 				startButton = null;
 			}
 			
 			if (container != null)
 			{
+				container.removeFromParent();
 				container.dispose();
 				container = null;
 			}

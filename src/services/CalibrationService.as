@@ -8,26 +8,28 @@ package services
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
 	
-	import mx.collections.ArrayCollection;
-	
 	import database.BgReading;
 	import database.BlueToothDevice;
 	import database.Calibration;
 	import database.CommonSettings;
 	import database.Sensor;
 	
+	import events.BlueToothServiceEvent;
 	import events.CalibrationServiceEvent;
 	import events.NotificationServiceEvent;
+	import events.SettingsServiceEvent;
 	import events.SpikeEvent;
 	import events.TransmitterServiceEvent;
 	
 	import feathers.controls.Alert;
 	import feathers.controls.TextInput;
+	import feathers.core.PopUpManager;
 	import feathers.layout.HorizontalAlign;
 	
 	import model.ModelLocator;
 	
 	import starling.core.Starling;
+	import starling.events.Event;
 	
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
@@ -45,8 +47,6 @@ package services
 		[ResourceBundle("globaltranslations")]
 		
 		private static var _instance:CalibrationService = new CalibrationService();
-		private static var bgLevel1:Number;
-		private static var timeStampOfFirstBgLevel:Number;
 		/**
 		 * if notification launched for requesting initial calibration, this value will be true<br>
 		 *
@@ -59,7 +59,9 @@ package services
 
 		private static var initialCalibrationActive:Boolean = false;
 		
+		private static const TIME_5_MINUTES:int = 5 * 60 * 1000;
 		
+
 		public static function get instance():CalibrationService {
 			return _instance;
 		}
@@ -72,16 +74,16 @@ package services
 		
 		public static function init():void {
 			myTrace("init");
-			bgLevel1 = Number.NaN;
-			timeStampOfFirstBgLevel = new Number(0);
 			TransmitterService.instance.addEventListener(TransmitterServiceEvent.BGREADING_EVENT, bgReadingReceived);
 			NotificationService.instance.addEventListener(NotificationServiceEvent.NOTIFICATION_EVENT, notificationReceived);
 			NotificationService.instance.addEventListener(NotificationServiceEvent.NOTIFICATION_SELECTED_EVENT, notificationReceived);
+			CommonSettings.instance.addEventListener(SettingsServiceEvent.SETTING_CHANGED, commonSettingChanged);
+			BluetoothService.instance.addEventListener(BlueToothServiceEvent.SENSOR_CHANGED_DETECTED, receivedSensorChanged);
 			Spike.instance.addEventListener(SpikeEvent.APP_IN_FOREGROUND, appInForeGround);
 			myTrace("finished init");
 		}
 		
-		public static function appInForeGround(event:Event = null):void {
+		public static function appInForeGround(event:flash.events.Event = null):void {
 			myTrace("in appInForeGround");
 			if (initialCalibrationRequested) {
 				myTrace("in appInForeGround, app has fired a notification for initialcalibration, but app was opened before notification was received - or appInForeGround is triggered faster than the notification event");
@@ -113,14 +115,16 @@ package services
 		{
 			myTrace("in requestInitialCalibration");
 			
-			var latestReadings:ArrayCollection = BgReading.latestBySize(1);
-			if (latestReadings.length == 0) 
-			{
-				myTrace("in requestInitialCalibration but latestReadings.length == 0, looks like an error because there shouldn't have been an calibration request, returning");
+			if (Calibration.allForSensor().length >= 2)
+				return;
+			
+			var latestReadings:Array = BgReading.latestBySize(2);
+			if (latestReadings.length < 2) {
+				myTrace("in requestInitialCalibration but latestReadings.length < 0, returning");
 				return;
 			}
 			
-			var latestReading:BgReading = (latestReadings.getItemAt(0)) as BgReading;
+			var latestReading:BgReading = (latestReadings[0]) as BgReading;
 			if ((new Date()).valueOf() - latestReading.timestamp > MAXIMUM_WAIT_FOR_CALIBRATION_IN_SECONDS * 1000) 
 			{
 				myTrace("in requestInitialCalibration, but latest reading was more than MAXIMUM_WAIT_FOR_CALIBRATION_IN_SECONDS");
@@ -135,30 +139,23 @@ package services
 				
 				return;
 			}
-
-			if (((new Date()).valueOf() - timeStampOfFirstBgLevel) > (7 * 60 * 1000 + 100)) 
-			{
-				myTrace("previous calibration was more than 7 minutes ago , restart");
-				timeStampOfFirstBgLevel = new Number(0);
-				bgLevel1 = Number.NaN;
-			}
 			
 			/* Create and Style Calibration Text Input */
 			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true")
 			{
-				calibrationValue = LayoutFactory.createTextInput(false, true, isNaN(bgLevel1) ? 145 : 170, HorizontalAlign.RIGHT);
+				calibrationValue = LayoutFactory.createTextInput(false, true, 170, HorizontalAlign.CENTER);
 				calibrationValue.maxChars = 3;
 			}
 			else
 			{
-				calibrationValue = LayoutFactory.createTextInput(false, false, isNaN(bgLevel1) ? 145 : 170, HorizontalAlign.RIGHT, true);
+				calibrationValue = LayoutFactory.createTextInput(false, false, 170, HorizontalAlign.CENTER, true);
 				calibrationValue.maxChars = 4;
 			}
 			
 			/* Create and Style Popup Window */
 			var calibrationPopup:Alert = AlertManager.showActionAlert
 			(
-				isNaN(bgLevel1) ? ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_first_calibration_title") : ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_second_calibration_title"),
+				ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_initial_calibration_title"),
 				"",
 				MAXIMUM_WAIT_FOR_CALIBRATION_IN_SECONDS,
 				[
@@ -181,15 +178,13 @@ package services
 		private static function bgReadingReceived(be:TransmitterServiceEvent):void {
 			myTrace("in bgReadingReceived");
 
-			var latestReadings:ArrayCollection = BgReading.latestBySize(1);
-			if (latestReadings.length == 0) 
-			{
-				//should never happen
-				myTrace("in bgReadingReceived but latestReadings.length == 0, looks like an error");
+			var latestReadings:Array = BgReading.latestBySize(2);
+			if (latestReadings.length < 2) {
+				myTrace("in bgReadingReceived but latestReadings.length <2");
 				return;
 			}
 			
-			var latestReading:BgReading = (latestReadings.getItemAt(0)) as BgReading;
+			var latestReading:BgReading = (latestReadings[0]) as BgReading;
 			if ((new Date()).valueOf() - latestReading.timestamp > MAXIMUM_WAIT_FOR_CALIBRATION_IN_SECONDS * 1000) 
 			{
 				//this can happen for example in case of blucon, if historical data is read which contains readings > 2 minutes old
@@ -202,14 +197,21 @@ package services
 				return;
 			}
 			
+			initialCalibrationActive = false;
+			
+			var warmupTimeInMs:Number = 2 * 3600 * 1000;
+			if (BlueToothDevice.isTypeLimitter()) {
+				warmupTimeInMs = 1 * 3600 * 1000;
+			}
+			
 			//if there's already more than two calibrations, then there's no need anymore to request initial calibration
 			if (Calibration.allForSensor().length < 2) 
 			{
 				myTrace("Calibration.allForSensor().length < 2");
 				
-				if (((new Date()).valueOf() - Sensor.getActiveSensor().startedAt < 2 * 3600 * 1000) && !BlueToothDevice.isTypeLimitter()) 
+				if ((new Date()).valueOf() - Sensor.getActiveSensor().startedAt < warmupTimeInMs) 
 				{
-					myTrace("CalibrationService : bgreading received but sensor age < 2 hours, so ignoring");
+					myTrace("CalibrationService : bgreading received but sensor age < " + warmupTimeInMs + " milliseconds, so ignoring");
 				} 
 				else 
 				{
@@ -225,9 +227,9 @@ package services
 							new NotificationBuilder()
 							.setCount(BadgeBuilder.getAppBadge())
 							.setId(NotificationService.ID_FOR_REQUEST_CALIBRATION)
-							.setAlert(ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_calibration_title"))
-							.setTitle(ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_calibration_title"))
-							.setBody(isNaN(bgLevel1) ? ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_first_calibration_title") : ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_second_calibration_title"))
+							.setAlert(ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_initial_calibration_title"))
+							.setTitle(ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_initial_calibration_title"))
+							.setBody(ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_initial_calibration_notification_body"))
 							.enableVibration(true)
 							.enableLights(true)
 							.build());
@@ -239,24 +241,28 @@ package services
 					{
 						myTrace("opening dialog to request calibration");
 						
-						initialCalibrationActive = true;
+						try
+						{
+							PopUpManager.removeAllPopUps(true);
+						} 
+						catch(error:Error) {}
 						
 						/* Create and Style Calibration Text Input */
 						if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true")
 						{
-							calibrationValue = LayoutFactory.createTextInput(false, true, isNaN(bgLevel1) ? 145 : 170, HorizontalAlign.RIGHT);
+							calibrationValue = LayoutFactory.createTextInput(false, true, 170, HorizontalAlign.CENTER);
 							calibrationValue.maxChars = 3;
 						}
 						else
 						{
-							calibrationValue = LayoutFactory.createTextInput(false, false, isNaN(bgLevel1) ? 145 : 170, HorizontalAlign.RIGHT, true);
+							calibrationValue = LayoutFactory.createTextInput(false, false, 170, HorizontalAlign.CENTER, true);
 							calibrationValue.maxChars = 4;
 						}
 						
 						/* Create and Style Popup Window */
 						var calibrationPopup:Alert = AlertManager.showActionAlert
 							(
-								isNaN(bgLevel1) ? ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_first_calibration_title") : ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_second_calibration_title"),
+								ModelLocator.resourceManagerInstance.getString("calibrationservice","enter_initial_calibration_title"),
 								"",
 								MAXIMUM_WAIT_FOR_CALIBRATION_IN_SECONDS,
 								[
@@ -274,17 +280,30 @@ package services
 						calibrationPopup.buttonGroupProperties.gap = 10;
 						calibrationPopup.buttonGroupProperties.horizontalAlign = HorizontalAlign.CENTER;
 						calibrationValue.setFocus();
+						calibrationPopup.addEventListener(starling.events.Event.CLOSE, onInitialCalibrationClosed);
+						initialCalibrationActive = true;
 					}
 				}
 			}
 		}
 		
-		private static function initialCalibrationValueEntered():void 
+		private static function onInitialCalibrationClosed(e:starling.events.Event):void
+		{
+			initialCalibrationActive = false;
+		}
+		
+		private static function initialCalibrationValueEntered(e:starling.events.Event = null):void 
 		{
 			initialCalibrationActive = false;
 			
 			if (calibrationValue == null || calibrationValue.text == "" || calibrationValue.text == null || !BackgroundFetch.appIsInForeground())
 				return;
+			
+			var latestReadings:Array = BgReading.latestBySize(2);
+			if (latestReadings.length < 2) {
+				myTrace("in initialCalibrationValueEntered but latestReadings.length < 2, looks like an error");
+				return;
+			}
 			
 			myTrace("in intialCalibrationValueEntered");
 			
@@ -311,23 +330,11 @@ package services
 					asNumber = asNumber * BgReading.MMOLL_TO_MGDL; 	
 				}
 				
-				if (isNaN(bgLevel1)) 
-				{
-					myTrace("in intialCalibrationValueEntered, this is the first calibration, waiting for next reading");
-					bgLevel1 = asNumber;
-					timeStampOfFirstBgLevel = (new Date()).valueOf();
-				} 
-				else 
-				{
-					myTrace("in intialCalibrationValueEntered, this is the second calibration, starting Calibration.initialCalibration");
-					Calibration.initialCalibration(bgLevel1, timeStampOfFirstBgLevel, asNumber, (new Date()).valueOf());
-					var calibrationServiceEvent:CalibrationServiceEvent = new CalibrationServiceEvent(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT);
-					_instance.dispatchEvent(calibrationServiceEvent);
-					
-					//reset values for the case that the sensor is stopped and restarted
-					bgLevel1 = Number.NaN;
-					timeStampOfFirstBgLevel = 0;
-				}
+				myTrace("in intialCalibrationValueEntered, starting Calibration.initialCalibration");
+				var now:Number = new Date().valueOf();
+				Calibration.initialCalibration(asNumber, now - TIME_5_MINUTES, now, BlueToothDevice.isMiaoMiao() ? 36 : 5);
+				var calibrationServiceEvent:CalibrationServiceEvent = new CalibrationServiceEvent(CalibrationServiceEvent.INITIAL_CALIBRATION_EVENT);
+				_instance.dispatchEvent(calibrationServiceEvent);
 			}
 		}
 		
@@ -341,12 +348,12 @@ package services
 			/* Create and Style Calibration Text Input */
 			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true")
 			{
-				calibrationValue = LayoutFactory.createTextInput(false, true, 135, HorizontalAlign.RIGHT);
+				calibrationValue = LayoutFactory.createTextInput(false, true, 135, HorizontalAlign.CENTER);
 				calibrationValue.maxChars = 3;
 			}
 			else
 			{
-				calibrationValue = LayoutFactory.createTextInput(false, false, 135, HorizontalAlign.RIGHT, true);
+				calibrationValue = LayoutFactory.createTextInput(false, false, 135, HorizontalAlign.CENTER, true);
 				calibrationValue.maxChars = 4;
 			}
 			
@@ -377,12 +384,9 @@ package services
 		 * if override = true, then a check will be done if there was a calibration in the last 60 minutes and if so the last calibration will be overriden<br>
 		 * if override = false, then there's no calibration override, no matter the timing of the last calibration<br>
 		 * <br>
-		 * if checklast30minutes = true, then it will be checked if there were readings in the last 30 minutes<br>
-		 * if checklast30minutes = false, then it will not be checked if there were readings in the last 30 minutes<br>
-		 * <br>
 		 * if addSnoozeOption = true, then an action will be added to the dialog which allows snoozing, the snoozeFunction should be non null and is called when the user choses that action
 		 */
-		public static function calibrationOnRequest(override:Boolean = true, checklast30minutes:Boolean = true, addSnoozeOption:Boolean = false, snoozeFunction:Function = null):void 
+		public static function calibrationOnRequest(override:Boolean = true, addSnoozeOption:Boolean = false, snoozeFunction:Function = null):void 
 		{
 			myTrace(" in calibrationOnRequest");
 			
@@ -391,6 +395,11 @@ package services
 			Notifications.service.cancel(NotificationService.ID_FOR_CALIBRATION_REQUEST_ALERT);
 			
 			//check if there's 2 readings the last 30 minutes
+			var latestBGReadings:Array = BgReading.last30Minutes();
+			if (latestBGReadings == null) return;
+			var last2calibrations:Array = Calibration.latest(2);
+			if (last2calibrations == null || last2calibrations.length == 0) return;
+			
 			if (BgReading.last30Minutes().length < 2) 
 			{
 				myTrace(" in calibrationOnRequest, BgReading.last30Minutes().length < 2");
@@ -406,16 +415,16 @@ package services
 				/* Create and Style Calibration Text Input */
 				if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true")
 				{
-					calibrationValue = LayoutFactory.createTextInput(false, true, 135, HorizontalAlign.RIGHT);
+					calibrationValue = LayoutFactory.createTextInput(false, true, 135, HorizontalAlign.CENTER);
 					calibrationValue.maxChars = 3;
 				}
 				else
 				{
-					calibrationValue = LayoutFactory.createTextInput(false, false, 135, HorizontalAlign.RIGHT, true);
+					calibrationValue = LayoutFactory.createTextInput(false, false, 135, HorizontalAlign.CENTER, true);
 					calibrationValue.maxChars = 4;
 				}
 				
-				if (((new Date()).valueOf() - (Calibration.latest(2).getItemAt(0) as Calibration).timestamp < (1000 * 60 * 60)) && override) 
+				if (((new Date()).valueOf() - (Calibration.latest(2)[0] as Calibration).timestamp < (1000 * 60 * 60)) && override) 
 				{
 					AlertManager.showActionAlert
 					(
@@ -591,6 +600,59 @@ package services
 			}
 		}
 		
+		private static function commonSettingChanged(event:SettingsServiceEvent):void {
+			if (event.data == CommonSettings.COMMON_SETTING_FSL_SENSOR_AGE) {
+				var currentSensorAgeInMinutes:int = new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_FSL_SENSOR_AGE));
+				if (currentSensorAgeInMinutes > 14.5 * 24 * 60) {
+					myTrace("in commonSettingChanged, sensorage more than 14.5 * 24 * 60 minutes, no further processing. Stop sensor if sensor is active");
+					if (Sensor.getActiveSensor() != null) {
+						//start sensor without user intervention 
+						Sensor.stopSensor();
+						giveSensorWarning("libre_14_dot_5_days_warning");
+					}
+				} else if (currentSensorAgeInMinutes > 14 * 24 * 60 && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_LIBRE_SENSOR_14DAYS_WARNING_GIVEN) == "false") {
+					myTrace("in commonSettingChanged, sensorage more than 14 * 24 * 60 minutes, give warning that sensor will expiry in half a day ");
+					if (Sensor.getActiveSensor() != null) {
+						giveSensorWarning("libre_14days_warning");
+						CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_LIBRE_SENSOR_14DAYS_WARNING_GIVEN,"true");
+					}
+				}
+				if (currentSensorAgeInMinutes > 0 && Sensor.getActiveSensor() == null && !BlueToothDevice.isMiaoMiao() && BlueToothDevice.knowsFSLAge() && currentSensorAgeInMinutes < 14.5 * 24 * 60) {
+					//not doing this for miaomiao because sensorstart for miaomiao is already handled in LibreAlarmReceiver
+					myTrace("in commonSettingChanged, sensorage changed to smaller value, starting sensor");
+					Sensor.startSensor(((new Date()).valueOf() - currentSensorAgeInMinutes * 60 * 1000));
+				}
+			}
+		}
+		
+		private static function giveSensorWarning(warning:String):void {
+			if (BackgroundFetch.appIsInForeground()) {
+				AlertManager.showSimpleAlert
+					(
+						ModelLocator.resourceManagerInstance.getString("transmitterservice","warning"),
+						ModelLocator.resourceManagerInstance.getString("transmitterservice",warning)
+					);
+			} else {
+				var notificationBuilder:NotificationBuilder = new NotificationBuilder()
+					.setId(NotificationService.ID_FOR_LIBRE_SENSOR_14DAYS)
+					.setAlert(ModelLocator.resourceManagerInstance.getString("transmitterservice","warning"))
+					.setTitle(ModelLocator.resourceManagerInstance.getString("transmitterservice","warning"))
+					.setBody(ModelLocator.resourceManagerInstance.getString("transmitterservice",warning))
+					.enableVibration(false)
+					.setSound("");
+				Notifications.service.notify(notificationBuilder.build());
+			}
+		}
+		
+		private static function receivedSensorChanged(be:BlueToothServiceEvent):void {
+			if (Sensor.getActiveSensor() != null && BlueToothDevice.knowsFSLAge()) {
+				myTrace("in receivedSensorChanged, Stopping the sensor"); 
+				Sensor.stopSensor();
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_FSL_SENSOR_AGE, "0");
+				giveSensorWarning("new_fsl_sensor_detected");
+			}
+		}
+
 		private static function myTrace(log:String):void {
 			Trace.myTrace("CalibrationService.as", log);
 		}

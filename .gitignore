@@ -6,6 +6,6 @@
 /libs/
 /src/assets/theme/
 /src/distriqtkey/
-/widget/
+*.xcuserstate
 .actionScriptProperties
 .project

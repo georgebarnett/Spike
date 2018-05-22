@@ -5,7 +5,6 @@ package ui.screens.display.readings
 	import database.BgReading;
 	import database.CommonSettings;
 	import database.Database;
-	import database.LocalSettings;
 	
 	import feathers.controls.Alert;
 	import feathers.controls.Button;
@@ -22,10 +21,14 @@ package ui.screens.display.readings
 	
 	import model.ModelLocator;
 	
+	import starling.core.Starling;
 	import starling.display.Canvas;
 	import starling.display.Image;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	import starling.textures.RenderTexture;
+	import starling.textures.SubTexture;
+	import starling.textures.Texture;
 	
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
@@ -52,6 +55,9 @@ package ui.screens.display.readings
 		
 		/* Objects */
 		private var accessoriesList:Array = [];
+		private var iconsList:Array = [];
+		private var buttonIconsImages:Array = [];
+		private var buttonIconsTextures:Array = [];
 		private var accessoryDictionary:Dictionary = new Dictionary( true );
 		
 		/* Properties */
@@ -73,6 +79,8 @@ package ui.screens.display.readings
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupInitialContent();
@@ -188,8 +196,6 @@ package ui.screens.display.readings
 					timeFormatted = TimeSpan.formatHoursMinutes(glucoseTime.getHours(), glucoseTime.getMinutes(), TimeSpan.TIME_FORMAT_12H);
 				var label:String = timeFormatted + "  -  " + glucoseValue;
 				
-				LocalSettings.setLocalSetting(LocalSettings.LOCAL_SETTING_NSLOG, "true");
-				
 				//Row icon (changes color depending of value of glucose reading
 				var icon:RenderTexture;
 				if (glucoseValueNumber >= urgentHighThreshold)
@@ -202,6 +208,8 @@ package ui.screens.display.readings
 					icon = lowTexture;
 				else
 					icon = urgentLowTexture;
+				
+				iconsList.push(icon);
 				
 				//Push row into list
 				dataList.push({ icon: icon, label: label, bgReading: reading, id: i });
@@ -227,12 +235,17 @@ package ui.screens.display.readings
 					if(!deleteButton)
 					{
 						deleteButton = new Button();
-						deleteButton.defaultIcon = new Image(MaterialDeepGreyAmberMobileThemeIcons.deleteForeverTexture);
+						var buttonIconTexture:Texture = MaterialDeepGreyAmberMobileThemeIcons.deleteForeverTexture;
+						var buttonIconImage:Image = new Image(buttonIconTexture);
+						deleteButton.defaultIcon = buttonIconImage;
 						deleteButton.styleNameList.add( BaseMaterialDeepGreyAmberMobileTheme.THEME_STYLE_NAME_BUTTON_HEADER_QUIET_ICON_ONLY );
 						deleteButton.pivotX = -5;
 						deleteButton.addEventListener(Event.TRIGGERED, onDeleteReading);
 						accessoryDictionary[ item ] = deleteButton;
+						buttonIconsTextures.push(buttonIconTexture);
+						buttonIconsImages.push(buttonIconImage);
 					}
+					
 					return deleteButton;
 				}
 				
@@ -283,12 +296,38 @@ package ui.screens.display.readings
 			}
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			var i:int;
+			
 			//Clear accessories
+			for (i = 0; i < buttonIconsTextures.length; i++) 
+			{
+				if (buttonIconsTextures[i] != null)
+				{
+					buttonIconsTextures[i].dispose();
+					buttonIconsTextures[i] = null;
+				}
+			}
+			
+			for (i = 0; i < buttonIconsImages.length; i++) 
+			{
+				if (buttonIconsImages[i] != null)
+				{
+					buttonIconsImages[i].dispose();
+					buttonIconsImages[i] = null;
+				}
+			}
+			
 			if (accessoryDictionary != null)
 			{
 				for each (var deleteButton:Button in accessoryDictionary) 
@@ -309,6 +348,8 @@ package ui.screens.display.readings
 			if (urgentHighTexture != null)
 			{
 				urgentHighTexture.dispose();
+				if ( urgentHighTexture is SubTexture ) 
+					(urgentHighTexture as SubTexture).parent.dispose();
 				urgentHighTexture = null;
 			}
 			
@@ -321,6 +362,8 @@ package ui.screens.display.readings
 			if (highTexture != null)
 			{
 				highTexture.dispose();
+				if ( highTexture is SubTexture ) 
+					(highTexture as SubTexture).parent.dispose();
 				highTexture = null;
 			}
 			
@@ -333,6 +376,8 @@ package ui.screens.display.readings
 			if (inRangeTexture != null)
 			{
 				inRangeTexture.dispose();
+				if ( inRangeTexture is SubTexture ) 
+					(inRangeTexture as SubTexture).parent.dispose();
 				inRangeTexture = null;
 			}
 			
@@ -345,6 +390,8 @@ package ui.screens.display.readings
 			if (lowTexture != null)
 			{
 				lowTexture.dispose();
+				if ( lowTexture is SubTexture ) 
+					(lowTexture as SubTexture).parent.dispose();
 				lowTexture = null;
 			}
 			
@@ -357,7 +404,20 @@ package ui.screens.display.readings
 			if (urgentLowTexture != null)
 			{
 				urgentLowTexture.dispose();
+				if ( urgentLowTexture is SubTexture ) 
+					(urgentLowTexture as SubTexture).parent.dispose();
 				urgentLowTexture = null;
+			}
+			
+			for (i = 0; i < iconsList.length; i++) 
+			{
+				if (iconsList[i] != null)
+				{
+					iconsList[i].dispose();
+					if ( iconsList[i] is SubTexture ) 
+						(iconsList[i] as SubTexture).parent.dispose();
+					iconsList[i] = null;
+				}
 			}
 			
 			super.dispose();

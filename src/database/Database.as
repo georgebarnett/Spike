@@ -39,6 +39,12 @@ package database
 	
 	import services.TransmitterService;
 	
+	import stats.BasicUserStats;
+	
+	import treatments.Insulin;
+	import treatments.Profile;
+	import treatments.Treatment;
+	
 	import utils.Trace;
 	
 	[ResourceBundle("alertsettingsscreen")]
@@ -60,7 +66,8 @@ package database
 		private static const debugMode:Boolean = true;
 		private static const MAX_DAYS_TO_STORE_BGREADINGS_IN_DATABASE:int = 90;
 		
-		private static const TREATMENTS_DEBUG:Boolean = false;
+		//Time constants
+		private static const TIME_24_HOURS:Number = 24 * 60 * 60 * 1000;
 		
 		/**
 		 * create table to store the bluetooth device name and address<br>
@@ -157,10 +164,11 @@ package database
 		private static const CREATE_TABLE_TREATMENTS:String = "CREATE TABLE IF NOT EXISTS treatments(" +
 			"id STRING PRIMARY KEY," +
 			"type STRING, " +
-			"insulin REAL, " +
-			"dia REAL, " +
+			"insulinamount REAL, " +
+			"insulinid STRING, " +
 			"carbs REAL, " +
 			"glucose REAL, " +
+			"glucoseestimated REAL, " +
 			"note STRING, " +
 			"lastmodifiedtimestamp TIMESTAMP NOT NULL)";
 		
@@ -169,10 +177,12 @@ package database
 			"name STRING, " +
 			"dia REAL, " +
 			"type STRING, " +
+			"isdefault STRING, " +
 			"lastmodifiedtimestamp TIMESTAMP NOT NULL)";
 		
 		private static const CREATE_TABLE_PROFILE:String = "CREATE TABLE IF NOT EXISTS profiles(" +
 			"id STRING PRIMARY KEY," +
+			"time STRING, " +
 			"name STRING, " +
 			"insulintocarbratios STRING, " +
 			"insulinsensitivityfactors STRING, " +
@@ -589,10 +599,7 @@ package database
 					insertAlertTypeSychronous(silentAlert);
 				}
 				
-				if (TREATMENTS_DEBUG == false)
-					finishedCreatingTables();
-				else
-					createTreatmentsTable();
+				createTreatmentsTable();
 			}
 			
 			function tableCreationError(see:SQLErrorEvent):void {
@@ -1020,8 +1027,8 @@ package database
 		/**
 		 * latest calibrations with the specified sensor id from large to small (ie descending) 
 		 */
-		public static function getLatestCalibrations(number:int, sensorId:String):ArrayCollection {
-			var returnValue:ArrayCollection = new ArrayCollection();
+		public static function getLatestCalibrations(number:int, sensorId:String):Array { 
+			var returnValue:Array = [];
 			try {
 				var conn:SQLConnection = new SQLConnection();
 				conn.open(dbFile, SQLMode.READ);
@@ -1032,12 +1039,13 @@ package database
 				getRequest.execute();
 				var result:SQLResult = getRequest.getResult();
 				conn.close();
-				if (result.data != null) {
+				if (result.data != null) 
+				{	
 					var numResults:int = result.data.length;
-					var tempReturnValue:ArrayCollection = new ArrayCollection();
+					var tempReturnValue:Array = [];
 					for (var i:int = 0; i < numResults; i++) 
 					{ 
-						tempReturnValue.addItem(
+						tempReturnValue.push(
 							new Calibration(
 								result.data[i].timestamp,
 								result.data[i].sensorAgeAtTimeOfEstimation,
@@ -1067,16 +1075,11 @@ package database
 								result.data[i].calibrationid)
 						);
 					}
-					var dataSortFieldForReturnValue:SortField = new SortField();
-					dataSortFieldForReturnValue.name = "timestamp";
-					dataSortFieldForReturnValue.numeric = true;
-					dataSortFieldForReturnValue.descending = true;//ie from large to small
-					var dataSortForBGReadings:Sort = new Sort();
-					dataSortForBGReadings.fields=[dataSortFieldForReturnValue];
-					tempReturnValue.sort = dataSortForBGReadings;
-					tempReturnValue.refresh();
+					
+					tempReturnValue.sortOn(["timestamp"], Array.NUMERIC | Array.DESCENDING);
+					
 					for (var cntr:int = 0; cntr < tempReturnValue.length; cntr++) {
-						returnValue.addItem(tempReturnValue.getItemAt(cntr));
+						returnValue.push(tempReturnValue[cntr]);
 						if (cntr == number - 1) {
 							break;
 						}
@@ -1188,11 +1191,11 @@ package database
 				var result:SQLResult = getRequest.getResult();
 				if (result.data != null) {
 					if (result.data != null) {
-						var calibrations:ArrayCollection = new ArrayCollection();
+						var calibrations:Array = [];
 						var numResults:int = result.data.length;
 						for (var i:int = 0; i < numResults; i++) 
 						{ 
-							calibrations.addItem(
+							calibrations.push(
 								new Calibration(
 									result.data[i].timestamp,
 									result.data[i].sensorAgeAtTimeOfEstimation,
@@ -1222,17 +1225,14 @@ package database
 									result.data[i].calibrationid)
 							);
 						} 
-						var dataSortFieldForReturnValue:SortField = new SortField();
-						dataSortFieldForReturnValue.name = "timestamp";
-						dataSortFieldForReturnValue.numeric = true;
+						
 						if (!first)
-							dataSortFieldForReturnValue.descending = true;//ie large to small
-						var dataSortForBGReadings:Sort = new Sort();
-						dataSortForBGReadings.fields=[dataSortFieldForReturnValue];
-						calibrations.sort = dataSortForBGReadings;
-						calibrations.refresh();
+							calibrations.sortOn(["timestamp"], Array.DESCENDING);
+						else
+							calibrations.sortOn(["timestamp"]);
+						
 						if (calibrations.length > 0)
-							returnValue = calibrations.getItemAt(0) as Calibration;
+							returnValue = calibrations[0] as Calibration;
 					}
 				}
 			} catch (error:SQLError) {
@@ -1465,12 +1465,14 @@ package database
 		
 		/**
 		 * get calibration for specified sensorId<br>
-		 * if there's no calibration for the specified sensorId then the returnvalue is an empty arraycollection<br>
+		 * if there's no calibration for the specified sensorId then the returnvalue is an empty array<br>
 		 * the calibrations will be order in descending order by timestamp<br>
 		 * synchronous
 		 */
-		public static function getCalibrationForSensorId(sensorId:String):ArrayCollection {
-			var returnValue:ArrayCollection = new ArrayCollection();
+		public static function getCalibrationForSensorId(sensorId:String):Array
+		{
+			var returnValue:Array = [];
+			
 			try {
 				var conn:SQLConnection = new SQLConnection();
 				conn.open(dbFile, SQLMode.READ);
@@ -1482,10 +1484,11 @@ package database
 				var result:SQLResult = getRequest.getResult();
 				conn.close();
 				if (result.data != null) {
+					
 					var numResults:int = result.data.length;
 					for (var i:int = 0; i < numResults; i++) 
 					{ 
-						returnValue.addItem(new Calibration(
+						returnValue.push(new Calibration(
 							result.data[i].timestamp,
 							result.data[i].sensorAgeAtTimeOfEstimation,
 							((result.data[i].sensorid) as String) == "-" ? null:getSensor(result.data[i].sensorid),
@@ -1514,14 +1517,8 @@ package database
 							result.data[i].calibrationid
 						));
 					} 
-					var dataSortFieldForReturnValue:SortField = new SortField();
-					dataSortFieldForReturnValue.name = "timestamp";
-					dataSortFieldForReturnValue.numeric = true;
-					dataSortFieldForReturnValue.descending = true;//ie large to small
-					var dataSortForBGReadings:Sort = new Sort();
-					dataSortForBGReadings.fields=[dataSortFieldForReturnValue];
-					returnValue.sort = dataSortForBGReadings;
-					returnValue.refresh();
+					
+					returnValue.sortOn(["timestamp"], Array.NUMERIC);
 					
 				}
 			} catch (error:SQLError) {
@@ -1535,7 +1532,6 @@ package database
 				return returnValue;
 			}
 		}
-		
 		
 		/**
 		 * inserts a sensor in the database<br>
@@ -2001,6 +1997,507 @@ package database
 			}
 		}
 		
+		/**
+		 * Get treatments synchronously
+		 * From: Starting timestamp.
+		 * Until: Ending timestamp.
+		 * Columns: Data columns to be retrieved from database.
+		 * MaxCount: Maximum of records returned from database (if applicable). 1 means all.
+		 */
+		public static function getTreatmentsSynchronous(from:Number, until:Number, columns:String = "*", maxCount:int = 1):Array {
+			var returnValue:Array = new Array();
+			try {
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.READ);
+				conn.begin();
+				var getRequest:SQLStatement = new SQLStatement();
+				getRequest.sqlConnection = conn;
+				if (maxCount == 1)
+					getRequest.text =  "SELECT " + columns + " FROM treatments WHERE lastmodifiedtimestamp BETWEEN " + from + " AND " + until + " ORDER BY lastmodifiedtimestamp DESC";
+				else
+					getRequest.text =  "SELECT " + columns + " FROM treatments WHERE lastmodifiedtimestamp BETWEEN " + from + " AND " + until +  " ORDER BY lastmodifiedtimestamp ASC LIMIT " + maxCount;
+				getRequest.execute();
+				var result:SQLResult = getRequest.getResult();
+				conn.close();
+				if (result.data != null)
+					returnValue = result.data;
+			} catch (error:SQLError) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_treatments', error.message + " - " + error.details);
+			} catch (other:Error) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_treatments',other.getStackTrace().toString());
+			} finally {
+				if (conn.connected) conn.close();
+				return returnValue;
+			}
+		}
+		
+		
+		/**
+		 * inserts a treatment in the database<br>
+		 * synchronous<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function insertTreatmentSynchronous(treatment:Treatment):void 
+		{
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var insertRequest:SQLStatement = new SQLStatement();
+				insertRequest.sqlConnection = conn;
+				var text:String = "INSERT INTO treatments (";
+				text += "id, ";
+				text += "type, ";
+				text += "insulinamount, ";
+				text += "insulinid, ";
+				text += "carbs, ";
+				text += "glucose, ";
+				text += "glucoseestimated, ";
+				text += "note, ";
+				text += "lastmodifiedtimestamp) ";
+				text += "VALUES (";
+				text += "'" + treatment.ID + "', ";
+				text += "'" + treatment.type + "', ";
+				text += treatment.insulinAmount + ", ";
+				text += "'" + treatment.insulinID + "', ";
+				text += treatment.carbs + ", ";
+				text += treatment.glucose + ", ";
+				text += treatment.glucoseEstimated + ", ";
+				text += "'" + treatment.note + "', ";
+				text += treatment.timestamp + ")";
+				
+				insertRequest.text = text;
+				insertRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_inserting_treatment_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * updates a treatment in the database<br>
+		 * synchronous<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function updateTreatmentSynchronous(treatment:Treatment):void 
+		{
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var updateRequest:SQLStatement = new SQLStatement();
+				updateRequest.sqlConnection = conn;
+				updateRequest.text = "UPDATE treatments SET " +
+				"id = '" + treatment.ID + "', " +
+				"type = '" + treatment.type + "', " +
+				"insulinamount = " + treatment.insulinAmount + ", " +
+				"insulinid = '" + treatment.insulinID + "', " +
+				"carbs = " + treatment.carbs + ", " +
+				"glucose = " + treatment.glucose + ", " +
+				"glucoseestimated = " + treatment.glucoseEstimated + ", " +
+				"note = '" + treatment.note + "', " +
+				"lastmodifiedtimestamp = " + treatment.timestamp + " " +
+				"WHERE id = '" + treatment.ID + "'";
+				updateRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_updating_treatment_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * deletes a treatment in the database<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function deleteTreatmentSynchronous(treatment:Treatment):void {
+			try {
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var deleteRequest:SQLStatement = new SQLStatement();
+				deleteRequest.sqlConnection = conn;
+				deleteRequest.text = "DELETE from treatments where id = " + "'" + treatment.ID + "'";
+				deleteRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_deleting_treatment_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * Get Insulins synchronously
+		 */
+		public static function getInsulinsSynchronous():Array {
+			var returnValue:Array = new Array();
+			try {
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.READ);
+				conn.begin();
+				var getRequest:SQLStatement = new SQLStatement();
+				getRequest.sqlConnection = conn;
+				getRequest.text =  "SELECT * FROM insulins";
+				getRequest.execute();
+				var result:SQLResult = getRequest.getResult();
+				conn.close();
+				if (result.data != null)
+					returnValue = result.data;
+				
+			} catch (error:SQLError) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_insulins', error.message + " - " + error.details);
+			} catch (other:Error) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_insulins',other.getStackTrace().toString());
+			} finally {
+				if (conn.connected) conn.close();
+				return returnValue;
+			}
+		}
+		
+		/**
+		 * inserts an insulin in the database<br>
+		 * synchronous<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function insertInsulinSynchronous(insulin:Insulin):void 
+		{
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var insertRequest:SQLStatement = new SQLStatement();
+				insertRequest.sqlConnection = conn;
+				var text:String = "INSERT INTO insulins (";
+				text += "id, ";
+				text += "name, ";
+				text += "dia, ";
+				text += "type, ";
+				text += "isdefault, ";
+				text += "lastmodifiedtimestamp) ";
+				text += "VALUES (";
+				text += "'" + insulin.ID + "', ";
+				text += "'" + insulin.name + "', ";
+				text += insulin.dia + ", ";
+				text += "'" + insulin.type + "', ";
+				text += "'" + insulin.isDefault + "', ";
+				text += insulin.timestamp + ")";
+				
+				insertRequest.text = text;
+				insertRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_inserting_insulin_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * updates an insulin in the database<br>
+		 * synchronous<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function updateInsulinSynchronous(insulin:Insulin):void 
+		{
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var updateRequest:SQLStatement = new SQLStatement();
+				updateRequest.sqlConnection = conn;
+				updateRequest.text = "UPDATE insulins SET " +
+					"id = '" + insulin.ID + "', " +
+					"name = '" + insulin.name + "', " +
+					"dia = " + insulin.dia + ", " +
+					"type = '" + insulin.type + "', " +
+					"isdefault = '" + insulin.isDefault + "', " +
+					"lastmodifiedtimestamp = " + insulin.timestamp + " " +
+					"WHERE id = '" + insulin.ID + "'";
+				updateRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_updating_insulin_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * deletes an insulin in the database<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function deleteInsulinSynchronous(insulin:Insulin):void {
+			try {
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var deleteRequest:SQLStatement = new SQLStatement();
+				deleteRequest.sqlConnection = conn;
+				deleteRequest.text = "DELETE from insulins WHERE id = " + "'" + insulin.ID + "'";
+				deleteRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_deleting_insulin_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * Get Profile synchronously
+		 */
+		public static function getProfilesSynchronous():Array {
+			var returnValue:Array = new Array();
+			try {
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.READ);
+				conn.begin();
+				var getRequest:SQLStatement = new SQLStatement();
+				getRequest.sqlConnection = conn;
+				getRequest.text =  "SELECT * FROM profiles";
+				getRequest.execute();
+				var result:SQLResult = getRequest.getResult();
+				conn.close();
+				if (result.data != null)
+					returnValue = result.data;
+				
+			} catch (error:SQLError) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_profiles', error.message + " - " + error.details);
+			} catch (other:Error) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_profiles',other.getStackTrace().toString());
+			} finally {
+				if (conn.connected) conn.close();
+				return returnValue;
+			}
+		}
+		
+		/**
+		 * inserts a profile in the database<br>
+		 * synchronous<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function insertProfileSynchronous(profile:Profile):void 
+		{
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var insertRequest:SQLStatement = new SQLStatement();
+				insertRequest.sqlConnection = conn;
+				var text:String = "INSERT INTO profiles (";
+				text += "id, ";
+				text += "time, ";
+				text += "name, ";
+				text += "insulintocarbratios, ";
+				text += "insulinsensitivityfactors, ";
+				text += "carbsabsorptionrate, ";
+				text += "basalrates, ";
+				text += "targetglucoserates, ";
+				text += "lastmodifiedtimestamp) ";
+				text += "VALUES (";
+				text += "'" + profile.ID + "', ";
+				text += "'" + profile.time + "', ";
+				text += "'" + profile.name + "', ";
+				text += "'" + profile.insulinToCarbRatios + "', ";
+				text += "'" + profile.insulinSensitivityFactors + "', ";
+				text += profile.carbsAbsorptionRate + ", ";
+				text += "'" + profile.basalRates + "', ";
+				text += "'" + profile.targetGlucoseRates + "', ";
+				text += profile.timestamp + ")";
+				
+				insertRequest.text = text;
+				insertRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_inserting_profile_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * updates a profile in the database<br>
+		 * synchronous<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function updateProfileSynchronous(profile:Profile):void 
+		{
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var updateRequest:SQLStatement = new SQLStatement();
+				updateRequest.sqlConnection = conn;
+				updateRequest.text = "UPDATE profiles SET " +
+					"id = '" + profile.ID + "', " +
+					"time = '" + profile.time + "', " +
+					"name = '" + profile.name + "', " +
+					"insulintocarbratios = '" + profile.insulinToCarbRatios + "', " +
+					"insulinsensitivityfactors = '" + profile.insulinSensitivityFactors + "', " +
+					"carbsabsorptionrate = " + profile.carbsAbsorptionRate + ", " +
+					"basalrates = '" + profile.basalRates + "', " +
+					"targetglucoserates = '" + profile.targetGlucoseRates + "', " +
+					"lastmodifiedtimestamp = " + profile.timestamp + " " +
+					"WHERE id = '" + profile.ID + "'";
+				updateRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_updating_profilr_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * deletes a profile in the database<br>
+		 * dispatches info if anything goes wrong 
+		 */
+		public static function deleteProfileSynchronous(profile:Profile):void {
+			try {
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.UPDATE);
+				conn.begin();
+				var deleteRequest:SQLStatement = new SQLStatement();
+				deleteRequest.sqlConnection = conn;
+				deleteRequest.text = "DELETE from profiles WHERE id = " + "'" + profile.ID + "'";
+				deleteRequest.execute();
+				conn.commit();
+				conn.close();
+			} catch (error:SQLError) {
+				if (conn.connected) {
+					conn.rollback();
+					conn.close();
+				}
+				dispatchInformation('error_while_deleting_profile_in_db', error.message + " - " + error.details);
+			}
+		}
+		
+		/**
+		 * Returns pie chart stats: Average Glucose, Number Low Readings, Number In Range Readings, Number High Readings and Number Total Readings.<br>
+		 * Between two dates, in a combined query for faster processing.<br>
+		 * Readings without calibration are ignored.
+		 */
+		public static function getBasicUserStats():BasicUserStats 
+		{
+			var userStats:BasicUserStats = new BasicUserStats();
+			var a1cOffset:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PIE_CHART_A1C_OFFSET));
+			var avgOffset:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PIE_CHART_AVG_OFFSET));
+			var rangesOffset:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PIE_CHART_RANGES_OFFSET));
+			var lowThreshold:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_LOW_MARK));;
+			var highThreshold:Number = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_HIGH_MARK));
+			var now:Number = new Date().valueOf();
+			
+			try 
+			{
+				var conn:SQLConnection = new SQLConnection();
+				conn.open(dbFile, SQLMode.READ);
+				conn.begin();
+				var getRequest:SQLStatement = new SQLStatement();
+				getRequest.sqlConnection = conn;
+				var sqlQuery:String = "";
+				sqlQuery += "SELECT AVG(calculatedValue) AS `averageGlucose`, "
+				sqlQuery +=	"(SELECT AVG(calculatedValue) FROM bgreading WHERE calibrationid != '-' AND timestamp BETWEEN " + (now - a1cOffset) + " AND " + now + ") AS `averageGlucoseA1C`, ";
+				sqlQuery +=	"(SELECT COUNT(bgreadingid) FROM bgreading WHERE calibrationid != '-' AND timestamp BETWEEN " + (now - TIME_24_HOURS) + " AND " + now + ") AS `numReadingsDay`, ";
+				sqlQuery +=	"(SELECT COUNT(bgreadingid) FROM bgreading WHERE calibrationid != '-' AND timestamp BETWEEN " + (now - rangesOffset) + " AND " + now + ") AS `numReadingsTotal`, ";
+				sqlQuery +=	"(SELECT COUNT(bgreadingid) FROM bgreading WHERE calibrationid != '-' AND calculatedValue <= " + lowThreshold + " AND timestamp BETWEEN " + (now - rangesOffset) + " AND " + now + ") AS `numReadingsLow`, ";
+				sqlQuery +=	"(SELECT COUNT(bgreadingid) FROM bgreading WHERE calibrationid != '-' AND calculatedValue > " + lowThreshold + " AND calculatedValue < " + highThreshold + " AND timestamp BETWEEN " + (now - rangesOffset) + " AND " + now + ") AS `numReadingsInRange`, ";
+				sqlQuery +=	"(SELECT COUNT(bgreadingid) FROM bgreading WHERE calibrationid != '-' AND calculatedValue >= " + highThreshold + " AND timestamp BETWEEN " + (now - rangesOffset) + " AND " + now + ") AS `numReadingsHigh` ";
+				sqlQuery +=	"FROM bgreading WHERE calibrationid != '-' AND timestamp BETWEEN " + (now - avgOffset) + " AND " + now;
+				getRequest.text = sqlQuery;
+				getRequest.execute();
+				var result:SQLResult = getRequest.getResult();
+				conn.close();
+				
+				if 
+				(
+					result.data != null && 
+					result.data is Array && 
+					result.data[0] != null && 
+					(result.data[0]["averageGlucose"] != null && !isNaN(result.data[0]["averageGlucose"])) &&    
+					(result.data[0]["numReadingsDay"] != null && !isNaN(result.data[0]["numReadingsDay"])) &&    
+					(result.data[0]["numReadingsTotal"] != null && !isNaN(result.data[0]["numReadingsTotal"])) &&    
+					(result.data[0]["numReadingsLow"] != null && !isNaN(result.data[0]["numReadingsLow"])) &&    
+					(result.data[0]["numReadingsInRange"] != null && !isNaN(result.data[0]["numReadingsInRange"])) &&    
+					(result.data[0]["numReadingsHigh"] != null && !isNaN(result.data[0]["numReadingsHigh"])) && 
+					(result.data[0]["averageGlucoseA1C"] != null && !isNaN(result.data[0]["averageGlucoseA1C"]))  
+				)
+				{
+					userStats.averageGlucose = ((Number(result.data[0]["averageGlucose"]) * 10 + 0.5)  >> 0) / 10;
+					if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) != "true") userStats.averageGlucose = Math.round(((BgReading.mgdlToMmol((userStats.averageGlucose))) * 10)) / 10;
+					userStats.numReadingsDay = Number(result.data[0]["numReadingsDay"]);
+					userStats.numReadingsTotal = Number(result.data[0]["numReadingsTotal"]);
+					userStats.numReadingsLow = Number(result.data[0]["numReadingsLow"]);
+					userStats.numReadingsInRange = Number(result.data[0]["numReadingsInRange"]);
+					userStats.numReadingsHigh = Number(result.data[0]["numReadingsHigh"]);
+					userStats.a1c = ((((46.7 + (((Number(result.data[0]["averageGlucoseA1C"]) * 10 + 0.5)  >> 0) / 10)) / 28.7) * 10 + 0.5)  >> 0) / 10;
+					if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PIE_CHART_A1C_IFCC_ON) == "true")
+						userStats.a1c = ((((userStats.a1c - 2.15) * 10.929) * 10 + 0.5)  >> 0) / 10; //IFCC support
+					userStats.percentageHigh = (userStats.numReadingsHigh * 100) / userStats.numReadingsTotal;
+					userStats.percentageHighRounded = ((userStats.percentageHigh * 10 + 0.5)  >> 0) / 10;
+					userStats.percentageInRange = (userStats.numReadingsInRange * 100) / userStats.numReadingsTotal;
+					userStats.percentageInRangeRounded = ((userStats.percentageInRange * 10 + 0.5)  >> 0) / 10;
+					var preLow:Number = Math.round((userStats.numReadingsLow * 100) / userStats.numReadingsTotal) * 10 / 10;
+					var percentageLow:Number;
+					var percentageLowRounded:Number;
+					if (preLow != 0 && !isNaN(preLow))
+					{
+						userStats.percentageLow = 100 - userStats.percentageInRange - userStats.percentageHigh;
+						userStats.percentageLowRounded = Math.round ((100 - userStats.percentageInRangeRounded - userStats.percentageHighRounded) * 10) / 10;
+					}
+					userStats.captureRate = ((((userStats.numReadingsDay * 100) / 288) * 10 + 0.5)  >> 0) / 10;
+				}
+			} catch (error:SQLError) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_bgreadings_for_spike_server', error.message + " - " + error.details);
+			} catch (other:Error) {
+				if (conn.connected) conn.close();
+				dispatchInformation('error_while_getting_bgreadings_for_spike_server',other.getStackTrace().toString());
+			} finally {
+				if (conn.connected) conn.close();
+				return userStats;
+			}
+		}
+		
 		public static function updateCommonSetting(settingId:int,newValue:String, lastModifiedTimeStamp:Number = Number.NaN):void {
 			if (newValue == null || newValue == "") newValue = "-";
 			try {
@@ -2145,6 +2642,5 @@ package database
 		private static function myTrace(log:String):void {
 			Trace.myTrace("Database.as", log);
 		}
-		
 	}
 }

@@ -116,6 +116,9 @@ package services
 		public static const ID_FOR_APPLICATION_INACTIVE_ALERT:int = 19;
 		public static const ID_FOR_DEAD_OR_EXPIRED_SENSOR_TRANSMITTER_PL:int = 20;
 		public static const ID_FOR_HTTP_SERVER_DOWN:int = 21;
+		public static const ID_FOR_SENSOR_NOT_DETECTED_MIAOMIAO:int = 22;
+		public static const ID_FOR_LIBRE_SENSOR_14DAYS:int = 23;
+		public static const ID_FOR_G5_RESET_DONE:int = 24;
 		
 		public static const ID_FOR_ALERT_LOW_CATEGORY:String = "LOW_ALERT_CATEGORY";
 		public static const ID_FOR_ALERT_HIGH_CATEGORY:String = "HIGH_ALERT_CATEGORY";
@@ -161,7 +164,7 @@ package services
 				new NotificationBuilder()
 				.setCount(BadgeBuilder.getAppBadge())
 				.setId(ID_FOR_DEVICE_NOT_PAIRED)
-				.setAlert("Device Not Paired")
+				.setAlert(titleText)
 				.setTitle(titleText)
 				.setBody(bodyText)
 				.enableLights(true)
@@ -180,7 +183,7 @@ package services
 					new NotificationBuilder()
 					.setCount(BadgeBuilder.getAppBadge())
 					.setId(ID_FOR_PATCH_READ_ERROR_BLUKON)
-					.setAlert("BluKon Error")
+					.setAlert(titleText)
 					.setTitle(titleText)
 					.setBody(bodyText)
 					.enableLights(true)
@@ -350,7 +353,7 @@ package services
 			
 			function onLocalSettingsChanged(event:SettingsServiceEvent):void
 			{
-				if (event.data == LocalSettings.LOCAL_SETTING_ALWAYS_ON_APP_BADGE)
+				if (event.data == LocalSettings.LOCAL_SETTING_ALWAYS_ON_APP_BADGE || (event.data == LocalSettings.LOCAL_SETTING_APP_BADGE_MMOL_MULTIPLIER_ON && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) != "true"))
 				{
 					Notifications.service.setBadgeNumber( BadgeBuilder.getAppBadge() );
 				}
@@ -439,7 +442,7 @@ package services
 						new NotificationBuilder()
 						.setCount(BadgeBuilder.getAppBadge())
 						.setId(NotificationService.ID_FOR_BG_VALUE)
-						.setAlert("Bg value")
+						.setAlert(valueToShow)
 						.setTitle(valueToShow)
 						.setBody(" ")
 						.setSound("")
@@ -505,6 +508,10 @@ package services
 				returnValue = "ID_FOR_DEAD_OR_EXPIRED_SENSOR_TRANSMITTER_PL";
 			else if (id == ID_FOR_HTTP_SERVER_DOWN)
 				returnValue = "ID_FOR_HTTP_SERVER_DOWN";
+			else if (id == ID_FOR_SENSOR_NOT_DETECTED_MIAOMIAO)
+				returnValue = "ID_FOR_SENSOR_NOT_DETECTED_MIAOMIAO";
+			else if (id == ID_FOR_LIBRE_SENSOR_14DAYS)
+				returnValue = "ID_FOR_LIBRE_SENSOR_14DAYS";
 			return returnValue;
 		}
 		

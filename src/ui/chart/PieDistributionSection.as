@@ -5,11 +5,12 @@ package ui.chart
 	import feathers.layout.VerticalAlign;
 	
 	import starling.display.Quad;
-	import starling.display.Shape;
 	import starling.display.Sprite;
 	
 	import ui.screens.display.LayoutFactory;
+	import ui.shapes.SpikeLine;
 	
+	import utils.Constants;
 	import utils.DeviceInfo;
 	
 	public class PieDistributionSection extends Sprite
@@ -17,9 +18,8 @@ package ui.chart
 		/* Display Objects */
 		public var title:Label;
 		public var message:Label;
-		private var border:Shape;
+		private var border:SpikeLine;
 		private var background:Quad;
-
 		private var titleBackground:Quad;
 		
 		public function PieDistributionSection(width:Number, height:Number, backgroundColor:uint, fontColor:uint = Number.NaN, borderColor:Number = Number.NaN)
@@ -31,35 +31,35 @@ package ui.chart
 			var titleFontSize:Number;
 			var messageFontSize:Number;
 			
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
 			{
 				titleFontSize = 9;
 				messageFontSize = 9;
 			}
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
-			{
-				titleFontSize = 8;
-				messageFontSize = 8;
-			}
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_6_6S_7_8)
 			{
 				titleFontSize = 12;
 				messageFontSize = 12;
 			}
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS || Constants.deviceModel == DeviceInfo.IPHONE_X)
 			{
 				titleFontSize = 11;
 				messageFontSize = 11;
 			}
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			else if (Constants.deviceModel == DeviceInfo.IPAD_MINI_1_2_3_4)
 			{
-				titleFontSize = 8.5;
-				messageFontSize = 8.5;
+				titleFontSize = 13;
+				messageFontSize = 13;
 			}
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || DeviceInfo.getDeviceType() == DeviceInfo.IPAD_PRO_105 || DeviceInfo.getDeviceType() == DeviceInfo.IPAD_PRO_129)
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97 || Constants.deviceModel == DeviceInfo.IPAD_PRO_105)
 			{
-				titleFontSize = 14;
-				messageFontSize = 14;
+				titleFontSize = 17;
+				messageFontSize = 17;
+			}
+			else if (Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
+			{
+				titleFontSize = 20;
+				messageFontSize = 20;
 			}
 			else
 			{
@@ -69,16 +69,19 @@ package ui.chart
 			
 			//Background
 			background = new Quad(width, height, backgroundColor);
+			background.touchable = false;
 			background.name = "background";
 			addChild(background);
 			
 			//Title Background
 			titleBackground = new Quad(width, height / 2, 0xEEEEEE);
+			titleBackground.touchable = false;
 			titleBackground.alpha = 0.05;
 			addChild(titleBackground);
 			
 			//Title
 			title = LayoutFactory.createLabel("", HorizontalAlign.CENTER, VerticalAlign.TOP, titleFontSize, true, fontColor);
+			title.touchable = false;
 			title.name = "title";
 			title.text = "Title";
 			title.validate();
@@ -90,6 +93,7 @@ package ui.chart
 			//Message
 			var availableVerticalSpace:Number = height - titleBackground.height;
 			message = LayoutFactory.createLabel("", HorizontalAlign.CENTER, VerticalAlign.TOP, messageFontSize, false, fontColor);
+			message.touchable = false;
 			message.name = "message";
 			message.width = width;
 			message.text = "Message";
@@ -101,13 +105,11 @@ package ui.chart
 			//Border
 			if (!isNaN(borderColor))
 			{
-				var borderLineThickness:uint = 1;
-				border = new Shape();
-				border.graphics.lineStyle(borderLineThickness, borderColor, 1);
-				border.graphics.moveTo(0, 0);
-				border.graphics.lineTo(width, 0);
-				border.graphics.endFill();
-				border.y = borderLineThickness / 2;
+				border = new SpikeLine();
+				border.lineStyle(1, borderColor);
+				border.moveTo(0, 0.5);
+				border.lineTo(width, 0.5);
+				border.touchable = false;
 				
 				addChild(border);
 			}
@@ -117,24 +119,28 @@ package ui.chart
 		{
 			if (title != null)
 			{
+				title.removeFromParent();
 				title.dispose();
 				title = null;
 			}
 			
 			if (message != null)
 			{
+				message.removeFromParent();
 				message.dispose();
 				message = null;
 			}
 			
 			if (border != null)
 			{
+				border.removeFromParent();
 				border.dispose();
 				border = null;
 			}
 			
 			if (background != null)
 			{
+				background.removeFromParent();
 				background.dispose();
 				background = null;
 			}

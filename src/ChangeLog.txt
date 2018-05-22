@@ -1,17 +1,164 @@
+2.1.0
+ENHANCEMENT: Chart line now uses gradients when transitioning from different colors (ex: low to in range). It look better and makes the horizontal threshold dashed lines more precise. (Miguel)
+ENHANCEMENT: Reversed order of IOB and COB on the watch app to stay in tune with the same order displayed in the iPhone app.
+
+2.0.9
+ENHANCEMENT: Increased graphics quality for glucose markers and all treatments present on the chart. (Miguel)
+ENHANCEMENT: Several optimizations were made to Spike's 3D engine which reflect in less draw calls to the GPU. (Miguel)
+ENHANCEMENT: Better sizing logic for the chart screen header for iPhone X when in portrait and landscape mode. (Miguel)
+FIX: Fixed disappearing display objects for some iPhone X and old devices (ex: iPhone 4S) when switching to landscape mode. Special thanks to Christian Rol for helping me test this on his iPhone X. (Miguel)
+FIX: Landscape support for treatments manager screen was missing. (Miguel)
+FIX: Other small fixes and improvements. (Miguel)
+
+2.0.8
+FEATURE: Spike now supports full rotation mode (portrait and landscape, including upside down). This also makes it possible to mirror Spike to a TV, projector or monitor. If using an Apple TV just AirPlay your device screen to it, if using a conventional TV, projector or monitor you'll need an HDMI adapter. Rotating Spike on older devices like iPhone 4S or older iOS versions like 8.0 can result in strange artefacts being drawn on the screen. This is due to low memory GPUs. I've made all possible tweaks in the code to minimize this but it can happen although rarely. If it does just restart Spike. Recent devices and iOS versions should have no issues. Special thanks to Edgardo Espector for helping me test it on iPhone X. (Miguel)
+FEATURE: Ability to display A1C in IFCC standard (mmol/mol). Press and hold stats for 1 second or head over to Settings -> Chart to enable/disable this option. (Miguel)
+FEATURE: Support for older versions of xDrip Wixel (Dexcom G4). For instance: xDrip delivered by xdripkit.co.uk. (Johan)
+ENHANCEMENT: Improved chart screen layout. Should be more consistent across all devices, especially iPhone X. (Miguel)
+ENHANCEMENT: Improved rendering of graphics on the chart. Should require less strain on the CPU/GPU and behave better on older devices. (Miguel)
+ENHANCEMENT: Added transmitter MAC address to Transmitter Screen for all transmitters and firmware version, other firmware version and bluetooth firmware version for Dexcom G5 users. (Johan & Miguel)
+ENHANCEMENT: Updated Spike's internal server endpoints list for developers in Settings -> Integration -> Internal HTTP Server. (Miguel)
+ENHANCEMENT: When user changes the app badge multiplier option (mmol/L), Spike immediately updates the badge. (Miguel)
+ENHANCEMENT: Added an alert in Settings -> Transmitter screen notifying user that changing transmitter type or ID will stop the current sensor. (Miguel)
+ENHANCEMENT: Improved overall stability in Spike when running in the background. (Miguel)
+ENHANCEMENT: Slightly increased stats calculations precision for followers. (Miguel)
+FIX: Dropdown transmitter type list was not displaying correctly on some large screen devices. (Sascha)
+FIX: When in mmol/L, app badge was not applying the multiplier for HIGH/LOW values. (Sascha)
+FIX: G4 Wixel battery was not displaying correctly in Main Menu -> Transmitter. (Miguel)
+FIX: Bug that sometimes would display "Unable to load" on the Fullscreen Widget. (Miguel)
+FIX: HIGH values were displayed as LOW on the Today Widget chart. (Miguel)
+FIX: MiaoMiao users, due to readings on demand, could have more than 12 or 24 readings on the today widget chart, breaking the lower labels and overcrowding the chart. This has been fixed. (Miguel)
+FIX: Treatments where not displaying correctly on Nightscout reports when using some specific browsers. Spike now uses a different date format that should display correctly on all browsers. Thank you Sulka Haro for pointing me in the right direction. (Miguel)
+FIX: Users that already have the latest Spike version installed should not get an in-app alert asking to update the app. (Miguel)
+FIX: Spike will not show duplicate alerts anymore, this includes initial calibration popups. (Miguel)
+FIX: As usual, other overall small fixes and improvements.
+
+2.0.7
+Internal build.
+
+2.0.6
+FIX: The annoying bug in the Today Widget (introduced in version 2.0.4) that was making it not display readings on the graph for followers was only partially fixed. It's 100% fixed now.
+FIX: A1C % was not being correctly calculated for followers when using mmol/L. Spike should now calculate everything correctly.
+
+2.0.5
+FEATURE: Time ranges for glucose distribution stats (pie chart) as requested by many users. You can now select stats for 1 day, 2 days, 3 days, 1 week, 2 weeks, 1 month and 3 months. Time ranges can be different (independent) between A1C, average glucose and thresholds (% high, in range, low). Example: You can set A1C for the last 3 months but average glucose for the last week, etc. Set ranges by going to Settings -> Chart or just press and hold for 1 second on the stats at the bottom of the chart screen. This feature is not available to followers. Followers only have stats for last 24H of data. A follower doesn't own the master's data, it just borrows it so no data is saved to Spike's internal database which means only the last 24H of data are kept inside Spike.
+FEATURE: Dexcom G5 transmitter reset. You can now reset your G5 internal clock directly on the transmitter screen (Main Menu -> Transmitter). This will reset the internal clock to 0 (Days Since Activation = 0) and will allow you to use expired/refurbished transmitters again with the official Dexcom app or a receiver. When Spike detects that your refurbished transmitter is sending values of 0 (this normally happens due to incorrectly placed batteries) it will ask you if you want to reset it. Resetting the transmitter in these situations tends to fix the issue. This feature is a starting point for an upcoming update that will allow Spike users to use the official Dexcom algorithm and have backfill data (resets every 112 days will be necessary and Spike will do it automatically). It will come at a later time, it still requires substantial amount of development. (Johan & Miguel)
+ENHANCEMENT: Lower GPU memory footprint.
+FIX: Chart time ago formatting when hours > 0.
+FIX: 45º Up arrow was overlapping the glucose value textfield on the Fullscreen View... Should display correctly now.
+FIX: When changing Libre sensors, Spike was not correctly stopping the previous sensor. This only affects BluCon and Transmitter PL users. (Johan)
+FIX: Today Widget chart is now fixed for followers. Sorry about that. This bug was introduced in version 2.0.4 due to a new feature that ignores readings without calibration.
+
+2.0.4
+FEAUTURE: Spike now comes bundled with an Apple Watch app! The watch allows you see your current glucose value, delta, time ago, velocity per minute, 30 minute prediction, IOB, COB, A1C, average glucose, high, low & in range percentages as well as 1h, 3H, 6H, 12H, 24H graph. It comes bundled with two views: chart and fullscreen (force touch app to access options). It also has a complication shortcut for quick access. All Spike settings like colors, glucose thresholds and units are automatically synced to the watch. Internal HTTP Server needs to be enabled in Spike (Settings -> Integration). The chart rendering requires an internet connection but everything else works completely offline. Special thanks to perceptus.org, Ken Stack, Katie Disimone and others for the initial work on this app (originally called nsapple). I've made extensive modifications to the code to make it faster, require less data and also added more features for Spike users. Spike's internal server was also modified to included a dedicated endpoint for the watch app. (Requires WatchOS 3.0 or later, works with all Apple Watches) 
+ENHANCEMENT: Support for BlueReader battery info. (Johan)
+ENHANCEMENT: BlueReader sensor age shown in status screen. (Johan)
+ENHANCEMENT: Support for BlueReader and Transmiter PL low battery alarms. (Johan)
+ENHANCEMENT: Blucon automatically start/stop sensor based on sensor age. (Johan)
+ENHANCEMENT: Complete revamp of the Bluetooth code to make it more readable and efficient. (Johan)
+ENHANCEMENT: Default insulin will now show as first option on the "Add Treatment" popup.
+ENHANCEMENT: Default calibration alarm for new users. 1 request every 24h from 8AM till 11PM. (Johan)
+ENHANCEMENT: Revamped Fullscreen View layout. Now includes IOB/COB, bigger fonts and bigger delta arrow.
+ENHANCEMENT: New formatting for time ago label on the chart and sensor age on the Sensor Screen.
+ENHANCEMENT: Internal HTTP Server now comes enabled by default for new users.
+FIX: BG Check treatments for mmol/L users were being uploaded to Nightscout as mg/dL. It's fixed now.
+FIX: Old versions of Nightscout's mongo database return the user's profile data in a different format and would make Spike not display treatments. Spike now supports both the old and new format and treatments should display correctly.
+FIX: COB now displays correctly when not using the default carb absorption rate of 30g per hour.
+FIX: Sometimes the alarm snoozer popup would crash Spike after unlocking the device to perform a snooze.
+FIX: Full screen Today Widget was not displaying correctly on small screen size devices.
+FIX: Layout fixes for the chart screen, especially when treatments are disabled.
+FIX: Readings without calibration are ignored and not added to the Today Widget.
+FIX: As usual, several other small fixes and improvements.
+
+2.0.3
+FIX: Fixes an issue where Spike would incorrectly make changes to Nightscout treatments for Loop/OpenAPS users which would result in Nightscout reporting incorrect values for IOB and COB. With this update Spike will not make any changes to existing Nightscout treatments. If you're a Loop/OpenAPS user be sure to enable the "Loop/OpenAPS User" option in Settings -> Treatments.
+FIX: BG Check treatment added directly from Spike now accepts up to 4 characters to make it compatible with mmol/L users.
+ENHANCEMENT: Small layout adjustments for the chart screen on iPhone X. Might need further improvements depending on user feedback.
+
+2.0.1
+FIX: Fixes a crash at app boot if the user had not previously authorised Spike to access HealthKit before upgrading to version 2.0.0.
+
+2.0.0
+FEAUTURE: First version of treatments is here!
+1) Spike now supports the following treatments: Bolus (insulin), Carbs, Meal, BG Check, Notes, Calibration and Sensor Start. All treatments are displayed directly on the chart. Use the + menu to add a treatment.
+2) Use the "Treatments" option available on the same menu to have a detailed list of all your treatments. You will be able to edit all treatments with great granularity. Treatments can also be deleted and moved directly from the chart. Click the treatment to be presented with options.
+3) Ability to add treatments directly from a Today Widget, Apple Watch and Pebble Watch without unlocking your device. Check instructions in Settings -> Treatments
+4) Insulin and carbs are also added to HealthKit (Johan)
+5) All treatments are synced automatically to Nightscout. Add, edit, delete or move a treatment in Spike and it will sync changes to Nightcout instantanously.
+6) Add, delete, edit or move a treatment in Nightscout and it will be synced automatically to Spike (can take up to 5 minutes for changes to be synced in order to save battery life but it normally happens instantanously)
+7) Ability to add multiple insulins in Spike, as well as your carb absorption rate.
+8) Spike will calculate IOB (Insulin-On-Board) and COB (Carbs-On-board) automatically in real time. You can also scroll back on the chart and know exactly the IOB and COB amount at a specific time of the day.
+9) Ability to use multiple insulins with diferent DIA's (Duration of Insulin Action) and Spike will calculate the combined IOB of them all.
+10) Today Widget has been updated to display real time IOB and COB.
+11) IOB and COB can also be synced to your Apple Watch complication (activate in Settings -> Watch), Pebble Watch and Garmin Watch. Know exactly how much insulin/carbs are active in your body just by glancing at your watch.
+12) New chart screen layout. Spike now uses pills to display IOB, COB, time ago and delta.
+13) IFTTT support for all treatments. You can trigger treatment added, deleted, edited as well as IOB and COB.
+14) Ability to fine tune a lot of settings for treatments like colors, visibility of IOB and COB, etc. Head over to Settings -> Treatments.
+15) Follower will also be able to see master's treatments, IOB and COB. For obvious reason a follower can't add, edit or delete treatments. Spike to Spike follwer mode will also sync treatments.
+This is just the first version of treatments and is more focused on MDI (pen) users. Subsequent versions will bring more features and will also be more focused on pump users.
+FEATURE: A second Today Widget has been added that mimics the fullscreen view. Spike now comes bundled with 2 Today Widgets.
+FEATURE: Press & hold the pie chart for 1 second and No Lock + Fullscreen view will automatically activate. Press and hold anywhere on the Fullscreen view for 1 second and it will close it.
+FEATURE: Ability to round mg/dL values on the chart view. Activate this option in Settings -> General.
+FEATURE: You can now use Dexcom Share even with non Dexcom transmitters like MiaoMiao, BluCon, etc. Read instructions in Settings -> Share -> Dexcom Share.
+FEATURE: User will receive a notification when the Libre sensor is about to expire (MiaoMiao only). (Johan)
+ENHANCEMENT: Added instructions in Settings -> Integration -> Internal HTTP Server for connecting FitBit watches to Spike.
+ENHANCEMENT: User email and name, when filling a bug report, will now be saved in database so the user doesn't have to fill them again on subsequent bug reports. (Johan)
+ENHANCEMENT: Ability to set default snooze time in alerts up to 9.999 minutes (165.65 hours)
+ENHANCEMENT: Support for MiaoMiao low battery alarms.
+FIX: Bug introduced in version 1.1.5 that would not show the alarm snoozer when the user swiped the lock screen notification has been fixed. Sorry about that!
+FIX: Sometimes Dexcom Share service would not automatically start after setting it for the first time and would require the user to restart Spike. This is now fixed.
+FIX: After receiving backfill data (MiaoMiao & Blucon) the most recent reading was not uploaded to Nightscout / Dexcom Share. It's fixed now.
+FIX: Several overall fixes for small bugs that we were able to catch due to the Global Exception Handling feature introduced in version 1.1.5.
+
+1.1.5
+FEATURE: MiaoMiao support! MiaoMiao is a powerful new transmitter for Libre sensors. With MiaoMiao, Spike will automatically start your sensor based on the time and date you activated it with the Libre Reader, LibreLink app or any third party app like Glimp S so no need for the user to manually start a sensor in Spike. As soon as you open Spike it will automatically fetch your current glucose value so you don't have to wait for the next reading. User also has the option to request readings on-demand (upper right "three dots" menu) any time he/she wants to know the current glucose value. Spike supports 8h backfill data with MiaoMiao. The last 25-30 minutes of data come in 5min intervals, the previous data comes in 15min intervals. When you add your initial calibration after starting a new sensor, Spike will apply it to all backfill data present in MiaoMiao, this means you'll have values collected during the warmup period on Spike's chart. Johan Degraeve did an incredible job adding support for MiaoMiao, I can't stress this enough! What we though was going to be a straightforward process turned out to be quite complicated. Johan used a lot of skill and resourcefulness to make this a reality. Incredible job, brother! My hat is off to you. I just ported his code, adapted to Spike and added the on-demand and a few other features. All kudos to Johan! It's times like this that make me really grateful to have you on team Spike! Special thanks also to tzachi-dar and JamOrHam from team xDrip+ for the initial implementation of the MiaoMiao protocol.  
+FIX: Fixed some inconsistencies in the Today Widget that resulted in the line coloring for mg/dL users not being 100% correct. It's 100% accurate now.
+FIX: Some fixes for Nightscout upload events related to locales and timezones.
+FIX: Fix for a rare bug in the Nightscout Service that could crash Spike.
+FIX: Small fix for some rare cases where the BG lock screen notification was not displaying values correctly.
+FIX: Fixed a rare bug that could cause Spike to continually try to create a remote monitoring session in Dexcom Share servers with transmitters not assigned to the user's account. This resulted in increase battery consumption. Now Spike should correctly detect these cases and will try to assign the transmitter to the user's account automatically.
+FIX: Delete last calibration in sensor screen now really clears and deletes the last calibration. Subsequent readings will be calibrated with the previous calibration.
+FIX: Fix for a rare bug that would show duplicate glucose values on the Today Widget.
+FIX: A lot of small fixes and safeguards all over to make Spike more stable.
+ENHANCEMENT: New calibration mechanism! When starting a new sensor, Spike will only ask for 1 initial calibration 10 minutes after the sensor is started. No more 2 initial calibrations! (Johan Degraeve)
+ENHANCEMENT: A LOT of code was changed in order to make Spike more stable when iOS is running low on resources (2 weeks worth of work). This should minimize freezes in Spike but still needs further improvements that will be added in a future release.
+ENHANCEMENT: Spike should now able to run even if iOS suspends it. If suspended, Spike will still get readings from the transmitter, play alarms, update the Today Widget, the Apple Watch complication, etc. The only services that will not run if Spike is completely suspended are: Uploads to Nightscout/DexcomShare/IFTTT (this can be fixed in a future update) and the internal HTTP server will be unresponsive (not fixable). Spike is not supposed to run while in suspended mode so this should not affect most users but in case your iOS runs out of memory/resources Spike will now continue to run and no readings will be lost.
+ENHANCEMENT: Global exception handling. If an error occurs anywhere in Spike's code, Spike will try to recover and will notify developers of the issue so a fix can be included in subsequent updates.
+ENHANCEMENT: Feathers and Starling UI frameworks have been updated to the latest versions (both include bug fixes).
+ENHANCEMENT: Improvement of German translations for the Speech feature. Thank you Christian Pichmann!
+ENHANCEMENT: Improvements for the Apple Watch complication instructions.
+ENHANCEMENT: Improvements for the lock screen notification's body text when Spike is ready for the initial calibration after starting a new sensor.
+ENHANCEMENT: Added some more "missed readings" suggestions to the help screen.
+ENHANCEMENT: 24h glucose distribution chart and stats now ignore readings that don't have a calibration.
+ENHANCEMENT: Today Widget now updates right away when a new calibration is inserted.
+ENHANCEMENT: Healthkit now supports writing backfill values with correct time/date of the corresponding readings (Johan Degraeve)
+ENHANCEMENT: A lot more stuff that I can't remember right now. :)
+
+This is an important update. ALL users are advised to update!
+
+The next update is probably the biggest one to date and will bring Spike to the next level. It's 80% done. It will be available very soon. Stay tuned! ;)
+
 1.1.4
-FEATURE: IFTTT support! Want Spike to make a phone call or send an SMS to a caregiver when your blood sugar is too low? Maybe you want to change the colors of your light bulbs at home when your blood sugar reaches a certain value? What about having your child's Spike send you a notification to your phone when he/she is too far away from the phone when at school? Or maybe notify your caregivers when you snooze a low alarm so they know you're ok? The possibilities are exciting and vast. IFTTT folows the "if this then that" model and it's up to your imagination to create IFTTT recipes for Spike that fit your needs. Be sure to go to settings -> integration -> IFTTT to activate this feature and read the instructions. 
-FEATURE: 2H sensor warm-up countdawn now available in the sensor screen (menu - sensor).
-FIX: When in eastern timezones (ex: Russia, Asia, etc.), Spike follower was not able to download new readings after the initial fetch. This has been fixed and Spike follower should now be compatible with all timezones.
-FIX: Calibrations made in Spike should now appear correctly in Nightscout for mmol/L users in all timezones.
-FIX: Several fixes for the in-app popup system, especially related to the calibration popup.
+FEATURE: IFTTT support! Want Spike to make a phone call or send an SMS to a caregiver when your blood sugar is too low? Maybe you want to change the colors of your light bulbs at home when your blood sugar reaches a certain value? What about having your child's Spike send you a notification to your phone when he/she is too far away from the phone when at school and Spike is missing readings? Or maybe notify your caregivers when you snooze an alarm so they know you're ok? The possibilities are exciting and vast. IFTTT follows the "if this then that" model and it's up to your imagination to create IFTTT recipes for Spike that fit your needs. Be sure to go to settings -> integration -> IFTTT to activate this feature and read the instructions. Don't forget to share your favorite Spike IFTTT recipes on our Facebook support group!
+FEATURE: Dynamic timeline for the main chart as requested by many users! You will now be able to have a better sense of your glucose trend throughout the day. 
+FEATURE: 2H sensor warm-up countdown now available in the sensor screen (menu -> sensor).
+FEATURE: Mmol/L users now have a new option in settings -> share that will allow them to have their latest glucose value on the app badge without being rounded to the nearest integer. With this option on, a value of 4.8 will be displayed as 48, 5.3 as 53 and so on.
+FEATURE: Added German language to the speech feature (spoken readings). Thank you to Joern Windler for the translations! Complete German UI is coming soon.
+FEATURE: When in follower mode, added ability to input the master's nightscout API secret in case the site is protected by AUTH_DEFAULT_ROLES and Spike cannot fetch data. Setting the master's API secret will make Spike bypass the AUTH_DEFAULT_ROLES restriction. This new setting is available in settings -> general -> data collection.
 ENHANCEMENT: Spike will now automatically kickstart a new method from 1AM to 8AM to try to avoid being kicked out of memory as that seems to be the time schedule were iOS is most aggressive. Users are advised to leave their devices charging at night.
+ENHANCEMENT: Also added a new method to the advanced settings to avoid Spike being kicked out of memory for those few selected users with low memory devices and extremely aggressive iOS versions. Go to settings -> advanced and read instructions for "alternative method #2".
+ENHANCEMENT: Now you can extend the pre-snooze time of alarms without having to first cancel the existing snooze. You can see these changes in the Snoozer popup, accessible through the upper right "three dots" menu.
 ENHANCEMENT: Improvements on how Spike's main chart handles unconventional data coming from the transmitter.
 ENHANCEMENT: More safeguards in Spike's internal server in case the user is using an app that sends requests that are outside of Nightscout's API norms.
-ENHANCEMENT: Improved text in glucose alarms lock screen notifications.
+ENHANCEMENT: Improved text in glucose alarm's lock screen notifications.
 ENHANCEMENT: Added Katie DiSimone's repo to Loop offline instructions.
 ENHANCEMENT: Better handling of delta values in the main chart when in follower mode. Should be more precise now.
-ENHANCEMENT: Mmol/L users now have a new option in settings -> share that will allow them to have their latest glucose value on the app badge without being rounded to the nearest integer. With this option on, a value of 4.8 will be displayed as 48, 5.3 as 53 and so on.
-ENHANCEMENT: Now you can extend the pre-snooze time of alarms without having to first cancel the existing snooze. You can see this changes in the Snoozer popup, accessible through the upper right three dots menu.
+ENHANCEMENT: Made some improvements to the app inactive alert.
+FIX: When in eastern timezones (ex: Russia, Asia, etc.), Spike follower was not able to download new readings after the initial fetch. This has been fixed and Spike follower should now be compatible with all timezones.
+FIX: Calibrations made in Spike should now appear correctly in Nightscout's chart for mmol/L users in all timezones.
+FIX: Several fixes for the in-app popup system, especially related to the calibration popup.
+FIX: Speech (spoken readings) now respect the device's mute status as long as "override mute" is off in Spike. Thanks to Johan Degraeve for the fix!
+FIX: Several overall fixes and improvements to make Spike more stable.
 
 1.1.3
 FEATURE: Spike will now play an alarm sound, vibrate and send a notification to the lock screen in case iOS closes the internal HTTP server if the user's device is low on memory. This servers as a safeguard, especially for offline loopers.

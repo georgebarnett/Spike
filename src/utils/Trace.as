@@ -3,12 +3,16 @@ package utils
 	
 	import com.freshplanet.ane.AirBackgroundFetch.BackgroundFetch;
 	
+	import flash.events.Event;
 	import flash.filesystem.File;
 	import flash.system.Capabilities;
 	
 	import mx.collections.ArrayCollection;
 	
 	import spark.formatters.DateTimeFormatter;
+	
+	import G5Model.G5VersionInfo;
+	import G5Model.VersionRequestRxMessage;
 	
 	import database.AlertType;
 	import database.BlueToothDevice;
@@ -19,6 +23,9 @@ package utils
 	import database.Sensor;
 	
 	import events.SettingsServiceEvent;
+	import events.SpikeEvent;
+	
+	import starling.utils.SystemUtil;
 	
 	
 	public class Trace
@@ -28,6 +35,7 @@ package utils
 		private static const debugMode:Boolean = true;
 		private static var initialStart:Boolean = true;
 		private static var filePath:String = "";
+		private static var stringToWrite:String = "";
 		
 		public function Trace()
 		{
@@ -38,6 +46,21 @@ package utils
 				initialStart = false;
 				LocalSettings.instance.addEventListener(SettingsServiceEvent.SETTING_CHANGED, localSettingChanged);
 				filePath = "";
+				Spike.instance.addEventListener(SpikeEvent.APP_IN_FOREGROUND, onAppActivated);
+			}
+		}
+		
+		protected static function onAppActivated(event:Event):void
+		{
+			if (LocalSettings.getLocalSetting(LocalSettings.LOCAL_SETTING_DETAILED_TRACING_ENABLED) == "true")
+			{
+				if (filePath == "")
+					getSaveStream();
+				
+				//Now that Spike is in the foreground we write the log
+				BackgroundFetch.writeTraceToFile(filePath, stringToWrite);
+				
+				stringToWrite = "";
 			}
 		}
 		
@@ -80,7 +103,17 @@ package utils
 			} else {
 				if (filePath == "")
 					getSaveStream();
-				BackgroundFetch.writeTraceToFile(filePath, traceText.replace(" spiketrace ", " "));			
+				
+				stringToWrite += traceText.replace(" spiketrace ", " ");
+				if (!SystemUtil.isApplicationActive && !BackgroundFetch.appIsInForeground() && !Constants.appInForeground)
+					stringToWrite += "\n"; 
+				
+				//Write to log only if Spike is in the foreground, otherwise queue it for later. This is to avoid crashes on some specific devices and/or iOS versions
+				if (SystemUtil.isApplicationActive && BackgroundFetch.appIsInForeground() && Constants.appInForeground)
+				{
+					BackgroundFetch.writeTraceToFile(filePath, stringToWrite);
+					stringToWrite = "";
+				}
 			}
 		}
 		
@@ -106,6 +139,17 @@ package utils
 				BackgroundFetch.writeTraceToFile(filePath, "Device Info = " + Capabilities.os);
 				var additionalInfoToWrite:String = "";
 				additionalInfoToWrite += "Device type = " + BlueToothDevice.deviceType() + ".\n";
+				additionalInfoToWrite += "Device MAC = " + BlueToothDevice.address + ".\n";
+				if (BlueToothDevice.isDexcomG5())
+				{
+					var dexcomG5TransmitterInfo:VersionRequestRxMessage = G5VersionInfo.getG5VersionInfo();
+					additionalInfoToWrite += "Firmware Version = " + dexcomG5TransmitterInfo.firmware_version_string + ".\n";
+					additionalInfoToWrite += "Other Firmware Version = " + dexcomG5TransmitterInfo.other_firmware_version + ".\n";
+					additionalInfoToWrite += "BT Firmware Version = " + dexcomG5TransmitterInfo.bluetooth_firmware_version_string + ".\n";
+					dexcomG5TransmitterInfo = null;
+				}
+				if (BlueToothDevice.isMiaoMiao())
+					additionalInfoToWrite += "Firmware Version = " + CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_MIAOMIAO_FW) + ".\n";
 				additionalInfoToWrite += "Transmitterid = " + CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TRANSMITTER_ID) + ".\n";
 				additionalInfoToWrite += "Sensor " + (Sensor.getActiveSensor() == null ? "not":"") + " started ";
 				additionalInfoToWrite += (Sensor.getActiveSensor() == null ? ".\n": dateFormatter.format(new Date(Sensor.getActiveSensor().startedAt)) + ".\n" + "\n");

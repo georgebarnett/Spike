@@ -11,6 +11,7 @@ package ui.screens.display.settings.integration
 	
 	import starling.core.Starling;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.screens.display.LayoutFactory;
 	
@@ -32,6 +33,8 @@ package ui.screens.display.settings.integration
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupContent();
@@ -86,7 +89,13 @@ package ui.screens.display.settings.integration
 		
 		private function onExportComplete(e:Event):void
 		{
-			exportBtn.label = ModelLocator.resourceManagerInstance.getString('sidiarysettingsscreen','export_button_label');
+			if (exportBtn != null && exportBtn.label != null)
+				exportBtn.label = ModelLocator.resourceManagerInstance.getString('sidiarysettingsscreen','export_button_label');
+		}
+		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
 		}
 		
 		/**
@@ -94,6 +103,8 @@ package ui.screens.display.settings.integration
 		 */		
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if (exportBtn != null)
 			{
 				exportBtn.removeEventListener(Event.TRIGGERED, onGenerateCSV);

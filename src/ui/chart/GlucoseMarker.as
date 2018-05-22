@@ -6,8 +6,9 @@ package ui.chart
 	
 	import model.ModelLocator;
 	
-	import starling.display.Canvas;
 	import starling.display.Sprite;
+	
+	import ui.shapes.SpikeNGon;
 	
 	import utils.MathHelper;
 	import utils.TimeSpan;
@@ -33,7 +34,8 @@ package ui.chart
 		private var data:Object;
 		private var dateFormat:String;
 
-		private var glucoseMarker:Canvas;
+		// Display Objects
+		private var glucoseMarker:SpikeNGon;
 
         public function GlucoseMarker(data:Object)
         {
@@ -74,7 +76,7 @@ package ui.chart
 			if(index > 0)
 			{
 				if (BlueToothDevice.isFollower() && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) != "true" && CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_FOLLOWER_MODE) == "Nightscout") 
-					slopeOutput = String(MathHelper.formatNightscoutFollowerSlope(Math.round((glucoseValueFormatted - data.previousGlucoseValueFormatted) * 10) / 10)) + " mmol/L";
+					slopeOutput = String(MathHelper.formatNightscoutFollowerSlope(Math.round((glucoseValueFormatted - data.previousGlucoseValueFormatted) * 10) / 10));
 				else
 				{
 					slopeOutput = GlucoseFactory.getGlucoseSlope
@@ -112,25 +114,19 @@ package ui.chart
         //Function to draw the shape
         public function draw():void
         {
-            glucoseMarker = new Canvas();
-            glucoseMarker.beginFill(color);
-            glucoseMarker.drawCircle(radius,radius,radius);
-            glucoseMarker.endFill();
-			
-            
+            glucoseMarker = new SpikeNGon(radius, 10, 0, 360, color);
+			glucoseMarker.x = glucoseMarker.y = radius;
             addChild(glucoseMarker);
         }
 		
 		public function updateColor():void
 		{
-			removeChild(glucoseMarker);
+			if (glucoseMarker != null)
+				glucoseMarker.removeFromParent(true);
 			
-			glucoseMarker = new Canvas();
-			glucoseMarker.beginFill(color);
-			glucoseMarker.drawCircle(radius,radius,radius);
-			glucoseMarker.endFill();
-			
-			addChild(glucoseMarker)
+			glucoseMarker = new SpikeNGon(radius, 15, 0, 360, color);
+			glucoseMarker.x = glucoseMarker.y = radius;
+			addChild(glucoseMarker);
 		}
 		
 		public function set newBgReading(bgReading:BgReading):void
@@ -141,6 +137,18 @@ package ui.chart
 		public function setLocationY (newY:Number):void
 		{
 			data.y = newY;
+		}
+		
+		override public function dispose():void
+		{
+			if (glucoseMarker != null)
+			{
+				glucoseMarker.removeFromParent();
+				glucoseMarker.dispose();
+				glucoseMarker = null;
+			}
+			
+			super.dispose();
 		}
     }
 }

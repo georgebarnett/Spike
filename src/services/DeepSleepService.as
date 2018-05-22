@@ -156,18 +156,51 @@ package services
 				if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DEEP_SLEEP_ALTERNATIVE_MODE) == "true")
 				{
 					soundPlayer = null;
+					
+					if (soundFile == null || soundFileNight == null || soundTransformNight == null || soundTransform == null)
+						createSoundProperties();
+					
 					if (hours >= 1 && hours <= 7)
 					{
 						//Night mode, play a bigger sound to try an further avoid suspension, also add some volume
 						soundPlayer = new Sound(soundFileNight);
 						channel = soundPlayer.play();
-						channel.soundTransform = soundTransformNight;
+						if (channel != null)
+							channel.soundTransform = soundTransformNight;
+						else
+						{
+							//Spike is suspended in memory. Let's try and play the sound with Backgroundfetch!
+							BackgroundFetch.playSound("../assets/sounds/500ms-of-silence.mp3", 0.01);
+						}
 					}
 					else
 					{
-						soundPlayer = new Sound(soundFile);
-						channel = soundPlayer.play();
-						channel.soundTransform = soundTransform;
+						if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DEEP_SLEEP_ALTERNATIVE_MODE_2) == "true")
+						{
+							//Plays with flash player audio and a 500ms sound file
+							soundPlayer = new Sound(soundFileNight);
+							channel = soundPlayer.play();
+							if (channel != null)
+								channel.soundTransform = soundTransformNight;
+							else
+							{
+								//Spike is suspended in memory. Let's try and play the sound with Backgroundfetch!
+								BackgroundFetch.playSound("../assets/sounds/500ms-of-silence.mp3", 0.01);
+							}
+						}
+						else
+						{
+							//Plays with flash player audio
+							soundPlayer = new Sound(soundFile);
+							channel = soundPlayer.play();
+							if (channel != null)
+								channel.soundTransform = soundTransform;
+							else
+							{
+								//Spike is suspended in memory. Let's try and play the sound with Backgroundfetch!
+								BackgroundFetch.playSound("../assets/sounds/500ms-of-silence.mp3", 0.01);
+							}
+						}
 					}
 				}
 				else
@@ -175,11 +208,14 @@ package services
 					if (hours >= 1 && hours <= 7)
 					{
 						//Night mode, play a bigger sound to try an further avoid suspension, also add some volume
-						BackgroundFetch.playSound("../assets/sounds/500ms-of-silence.mp3", 0.1);
+						BackgroundFetch.playSound("../assets/sounds/500ms-of-silence.mp3", 0.01);
 					}
 					else
 					{
-						BackgroundFetch.playSound("../assets/sounds/1-millisecond-of-silence.mp3", 0);
+						if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DEEP_SLEEP_ALTERNATIVE_MODE_2) == "true")
+							BackgroundFetch.playSound("../assets/sounds/500ms-of-silence.mp3", 0.01);
+						else
+							BackgroundFetch.playSound("../assets/sounds/1-millisecond-of-silence.mp3", 0);
 					}
 				}
 			}

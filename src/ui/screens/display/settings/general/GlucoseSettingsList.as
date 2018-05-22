@@ -1,8 +1,10 @@
 package ui.screens.display.settings.general
 {
 	import database.BgReading;
+	import database.BlueToothDevice;
 	import database.CommonSettings;
 	
+	import feathers.controls.Check;
 	import feathers.controls.List;
 	import feathers.controls.NumericStepper;
 	import feathers.controls.PickerList;
@@ -14,7 +16,9 @@ package ui.screens.display.settings.general
 	
 	import model.ModelLocator;
 	
+	import starling.core.Starling;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.screens.display.LayoutFactory;
 	
@@ -31,6 +35,7 @@ package ui.screens.display.settings.general
 		private var glucoseHighStepper:NumericStepper;
 		private var glucoseLowStepper:NumericStepper;
 		private var glucoseUrgentLowStepper:NumericStepper;
+		private var roundMgDlCheck:Check;
 		
 		/* Properties */
 		public var needsSave:Boolean = false;
@@ -40,6 +45,7 @@ package ui.screens.display.settings.general
 		private var glucoseHighValue:Number;
 		private var initiated:Boolean = false;
 		private var selectedUnit:String = "";
+		private var roundMfDlValue:Boolean;
 		
 		public function GlucoseSettingsList()
 		{
@@ -49,7 +55,18 @@ package ui.screens.display.settings.general
 		{
 			super.initialize();
 			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			setupProperties();
+			
+			/* Glucose Unit */
+			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true") 
+				selectedUnit = "mg/dL";
+			else
+				selectedUnit = "mmol/L";
+			
+			roundMfDlValue = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_ROUND_MGDL_ON) == "true";
+			
 			setupContent();
 			setupInitialState();
 		}
@@ -68,7 +85,7 @@ package ui.screens.display.settings.general
 		}
 		
 		private function setupContent():void
-		{
+		{	
 			//Glucose Units Picker
 			glucoseUnitsPicker = LayoutFactory.createPickerList();
 			var glucoseUnits:ArrayCollection = new ArrayCollection(
@@ -79,67 +96,72 @@ package ui.screens.display.settings.general
 			glucoseUnitsPicker.labelField = "label";
 			glucoseUnitsPicker.popUpContentManager = new DropDownPopUpContentManager();
 			glucoseUnitsPicker.dataProvider = glucoseUnits;
-			if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 				glucoseUnitsPicker.pivotX = 38;
+			if (selectedUnit == "mmol/L") 
+				glucoseUnitsPicker.selectedIndex = 1;
+			
+			//Round MGDL values
+			roundMgDlCheck = LayoutFactory.createCheckMark(roundMfDlValue);
+			roundMgDlCheck.pivotX = 3;
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
+				roundMgDlCheck.pivotX = 41;
 			
 			//Glucose Urgent High Value
 			glucoseUrgentHighStepper = new NumericStepper();
-			if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 				glucoseUrgentHighStepper.pivotX = 28;
 			
 			//Glucose High Value
 			glucoseHighStepper = new NumericStepper();
-			if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 				glucoseHighStepper.pivotX = 28;
 			
 			//Glucose Low Value
 			glucoseLowStepper = new NumericStepper();
-			if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 				glucoseLowStepper.pivotX = 28;
 			
 			//Glucose Urgent Low Value
 			glucoseUrgentLowStepper = new NumericStepper();
-			if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 				glucoseUrgentLowStepper.pivotX = 28;
 			
 			//Define Glucose Settings Data
-			var settingsData:ArrayCollection = new ArrayCollection(
-				[
-					{ label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','unit'), accessory: glucoseUnitsPicker },
-					{ label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','urgent_high_threshold'), accessory: glucoseUrgentHighStepper },
-					{ label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','high_threshold'), accessory: glucoseHighStepper },
-					{ label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','low_threshold'), accessory: glucoseLowStepper },
-					{ label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','urgent_low_threshold'), accessory: glucoseUrgentLowStepper }
-				]);
-			dataProvider = settingsData;
+			var data:Array = [];
+			data.push( { label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','unit'), accessory: glucoseUnitsPicker } );
+			if (selectedUnit == "mg/dL" && !BlueToothDevice.isFollower())
+				data.push( { label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','round_mgdl_chart_value'), accessory: roundMgDlCheck } );
+			data.push( { label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','urgent_high_threshold'), accessory: glucoseUrgentHighStepper } );
+			data.push( { label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','high_threshold'), accessory: glucoseHighStepper } );
+			data.push( { label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','low_threshold'), accessory: glucoseLowStepper } );
+			data.push( { label: ModelLocator.resourceManagerInstance.getString('generalsettingsscreen','urgent_low_threshold'), accessory: glucoseUrgentLowStepper } );
+			
+			dataProvider = new ArrayCollection(data);
 			
 			itemRendererFactory = function():IListItemRenderer
 			{
 				var itemRenderer:DefaultListItemRenderer = new DefaultListItemRenderer();
 				itemRenderer.labelField = "label";
 				itemRenderer.paddingRight = 0;
-				if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+				if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 					itemRenderer.paddingRight = -40;
 				return itemRenderer;
 			};
 		}
 		
 		private function setupInitialState(glucoseUnit:String = null):void
-		{
-			/* Glucose Unit */
-			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true") 
-			{
+		{	
+			if (selectedUnit == "mg/dL") 
 				glucoseUnitsPicker.selectedIndex = 0;
-				selectedUnit = "mg/dL";
-			}
 			else 
-			{
 				glucoseUnitsPicker.selectedIndex = 1;
-				selectedUnit = "mmol/L";
-			}
 			
 			/* Convert Steppers For Selected Glucose Unit */
 			convertSettpers();
+			
+			/* Set Up Round Values for MG/DL */
+			roundMgDlCheck.isSelected = roundMfDlValue;
 				
 			/* Set Glucose Tresholds */
 			glucoseHighValue = Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_HIGH_MARK));
@@ -151,12 +173,7 @@ package ui.screens.display.settings.general
 			populateSteppers();
 			
 			/* Set Change Event Handlers */
-			if(!initiated)
-			{
-				enableEventListeners();
-				
-				initiated = true;
-			}
+			enableEventListeners();
 		}
 		
 		private function enableEventListeners():void
@@ -166,6 +183,7 @@ package ui.screens.display.settings.general
 			glucoseHighStepper.addEventListener(Event.CHANGE, onHighChanged);
 			glucoseLowStepper.addEventListener(Event.CHANGE, onLowChanged);
 			glucoseUrgentLowStepper.addEventListener(Event.CHANGE, onUrgentLowChanged);
+			roundMgDlCheck.addEventListener(Event.CHANGE, onSettingsChanged);
 		}
 		
 		private function disableEventListeners():void
@@ -175,6 +193,7 @@ package ui.screens.display.settings.general
 			glucoseHighStepper.removeEventListener(Event.CHANGE, onHighChanged);
 			glucoseLowStepper.removeEventListener(Event.CHANGE, onLowChanged);
 			glucoseUrgentLowStepper.removeEventListener(Event.CHANGE, onUrgentLowChanged);
+			roundMgDlCheck.removeEventListener(Event.CHANGE, onSettingsChanged);
 		}
 		
 		private function convertSettpers():void
@@ -265,7 +284,11 @@ package ui.screens.display.settings.general
 			if(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_URGENT_HIGH_MARK) != glucoseUrgentHighValue.toString())
 				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_URGENT_HIGH_MARK, glucoseUrgentHighValue.toString());
 			if(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_URGENT_LOW_MARK) != glucoseUrgentLowValue.toString())
-				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_URGENT_LOW_MARK, glucoseUrgentLowValue.toString());		
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_URGENT_LOW_MARK, glucoseUrgentLowValue.toString());	
+			
+			/* Round MGDL Values */
+			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_CHART_ROUND_MGDL_ON) != String(roundMfDlValue))
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_CHART_ROUND_MGDL_ON, String(roundMfDlValue));
 			
 			needsSave = false;
 		}
@@ -343,6 +366,16 @@ package ui.screens.display.settings.general
 				
 				enableEventListeners();
 			}
+			
+			disableEventListeners();
+			setupContent();
+			if (selectedUnit == "mg/dL") 
+				glucoseUnitsPicker.selectedIndex = 0;
+			else 
+				glucoseUnitsPicker.selectedIndex = 1;
+			convertSettpers();
+			populateSteppers();
+			enableEventListeners();
 		}
 		
 		private function onSettingsChanged(e:Event):void
@@ -362,6 +395,8 @@ package ui.screens.display.settings.general
 				glucoseLowValue = Math.round(BgReading.mmolToMgdl(glucoseLowStepper.value));
 				glucoseUrgentLowValue = Math.round(BgReading.mmolToMgdl(glucoseUrgentLowStepper.value));
 			}
+			
+			roundMfDlValue = roundMgDlCheck.isSelected;
 			
 			needsSave = true;
 		}
@@ -470,11 +505,18 @@ package ui.screens.display.settings.general
 			needsSave = true;
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{	
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if(glucoseUnitsPicker != null)
 			{
 				glucoseUnitsPicker.removeEventListener(Event.CHANGE, onUnitsChanged);
@@ -504,6 +546,12 @@ package ui.screens.display.settings.general
 				glucoseUrgentLowStepper.removeEventListener(Event.CHANGE, onSettingsChanged);
 				glucoseUrgentLowStepper.dispose();
 				glucoseUrgentLowStepper = null;
+			}
+			if (roundMgDlCheck != null)
+			{
+				roundMgDlCheck.removeEventListener(Event.CHANGE, onSettingsChanged);
+				roundMgDlCheck.dispose();
+				roundMgDlCheck = null;
 			}
 			
 			super.dispose();

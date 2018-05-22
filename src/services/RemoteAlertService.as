@@ -17,6 +17,7 @@ package services
 	
 	import ui.popups.AlertManager;
 	
+	import utils.SpikeJSON;
 	import utils.Trace;
 	
 	[ResourceBundle('globaltranslations')]
@@ -139,7 +140,8 @@ package services
 				return;
 			}
 			
-			var data:Object = JSON.parse(loader.data as String);
+			//var data:Object = JSON.parse(loader.data as String);
+			var data:Object = SpikeJSON.parse(loader.data as String);
 			if (data.id == null) 
 			{
 				myTrace("no data.id");
@@ -156,11 +158,18 @@ package services
 			
 			var lastIDCheck:Number = Number(LocalSettings.getLocalSetting(LocalSettings.LOCAL_SETTING_REMOTE_ALERT_LAST_ID));
 			var currentIDCheck:Number = Number(data.id);
+			var possibleVersion:String = String(data.message).substr(0, 5);
 			
 			if (lastIDCheck >= currentIDCheck)
 			{
 				myTrace("this alert has already been shown to the user");
 				return;
+			}
+			else if ((String(data.message).indexOf(LocalSettings.getLocalSetting(LocalSettings.LOCAL_SETTING_APPLICATION_VERSION)) != -1 || (possibleVersion.charAt(1).indexOf(".") != -1 && versionAIsSmallerThanB(possibleVersion, LocalSettings.getLocalSetting(LocalSettings.LOCAL_SETTING_APPLICATION_VERSION)))) && String(data.message).indexOf("TestFlight") != -1)
+			{
+				//It's an update alert but user already has the latest versio
+				//Update Database so this alert is not shown anymore.
+				LocalSettings.setLocalSetting(LocalSettings.LOCAL_SETTING_REMOTE_ALERT_LAST_ID, String(currentIDCheck));
 			}
 			else
 			{
@@ -194,6 +203,25 @@ package services
 		/**
 		 * Utility
 		 */
+		private static function versionAIsSmallerThanB(versionA:String, versionB:String):Boolean 
+		{
+			var versionaSplitted:Array = versionA.split(".");
+			var versionbSplitted:Array = versionB.split(".");
+			if (new Number(versionaSplitted[0]) < new Number(versionbSplitted[0]))
+				return true;
+			if (new Number(versionaSplitted[0]) > new Number(versionbSplitted[0]))
+				return false;
+			if (new Number(versionaSplitted[1]) < new Number(versionbSplitted[1]))
+				return true;
+			if (new Number(versionaSplitted[1]) > new Number(versionbSplitted[1]))
+				return false;
+			if (new Number(versionaSplitted[2]) < new Number(versionbSplitted[2]))
+				return true;
+			if (new Number(versionaSplitted[2]) > new Number(versionbSplitted[2]))
+				return false;
+			return false;
+		}
+		
 		private static function myTrace(log:String):void 
 		{
 			Trace.myTrace("RemoteAlertService.as", log);

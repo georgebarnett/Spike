@@ -5,9 +5,8 @@ package utils
 	import flash.net.URLVariables;
 	import flash.utils.ByteArray;
 	
-	import mx.collections.ArrayCollection;
-	
 	import database.BgReading;
+	import database.BlueToothDevice;
 	import database.Calibration;
 	import database.Database;
 	import database.LocalSettings;
@@ -22,7 +21,9 @@ package utils
 	import feathers.core.PopUpManager;
 	import feathers.layout.HorizontalAlign;
 	import feathers.layout.HorizontalLayout;
+	import feathers.layout.VerticalAlign;
 	import feathers.layout.VerticalLayout;
+	import feathers.themes.BaseMaterialDeepGreyAmberMobileTheme;
 	
 	import model.ModelLocator;
 	
@@ -32,6 +33,9 @@ package utils
 	import starling.display.Sprite;
 	import starling.events.Event;
 	import starling.events.EventDispatcher;
+	import starling.events.ResizeEvent;
+	import starling.text.TextFormat;
+	import starling.utils.SystemUtil;
 	
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
@@ -51,7 +55,8 @@ package utils
 		private static var emailField:TextInput;
 		private static var sendButton:Button;
 		private static var siDiarySenderCallout:Callout;
-		private static var _instance:SiDiary = new SiDiary()
+		private static var _instance:SiDiary = new SiDiary();
+		private static var positionHelper:Sprite;
 		
 		/* Objects */
 		private static var fileData:ByteArray;
@@ -69,6 +74,8 @@ package utils
 		public static function exportSiDiary():void 
 		{
 			Trace.myTrace("SiDiary.as", "User requested export...");
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			//Instantiate objects
 			readingsList = [];
@@ -91,7 +98,7 @@ package utils
 			
 			const firstReading:BgReading = ModelLocator.bgReadings[0] as BgReading;
 			
-			if (lastExportTimeStamp > firstReading.timestamp)
+			if (lastExportTimeStamp > firstReading.timestamp || BlueToothDevice.isFollower())
 			{
 				Trace.myTrace("SiDiary.as", "Using ModelLocator readings...");
 				
@@ -121,6 +128,9 @@ package utils
 		
 		private static function formatData():void
 		{
+			if (readingsList == null)
+				return;
+			
 			Trace.myTrace("SiDiary.as", "Formatting data...");
 			
 			//Process glucose output
@@ -130,6 +140,9 @@ package utils
 			var newData:Boolean = false;
 			for(var i:int = readingsList.length - 1 ; i >= 0; i--)
 			{
+				if (readingsList[i] == null)
+					continue;
+				
 				if (readingsList[i].timestamp > lastExportTimeStamp) 
 				{
 					if (readingsList[i].calculatedValue != 0) 
@@ -143,10 +156,10 @@ package utils
 			}
 			
 			//Process calibrations output
-			var calibrations:ArrayCollection = Calibration.allForSensor();
+			var calibrations:Array = Calibration.allForSensor();
 			var calibrationsLength:int = calibrations.length - 1;
 			while (calibrationsLength > -1) {
-				var calibration:Calibration = calibrations.getItemAt(calibrationsLength) as Calibration;
+				var calibration:Calibration = calibrations[calibrationsLength] as Calibration;
 				if (calibration.timestamp > lastExportTimeStamp) 
 				{
 					outputArray[index] = DateTimeUtilities.createSiDiaryEntryFormattedDateAndTime(new Date(calibration.timestamp)) + ";;" + Math.round(calibration.bg) + ";;;;;" + "\n";
@@ -159,10 +172,17 @@ package utils
 			output = outputArray.join("");
 			
 			//Clean up memory
-			readingsList.length = 0;
-			readingsList = null;
-			outputArray.length = 0;
-			outputArray = null;
+			if (readingsList != null)
+			{
+				readingsList.length = 0;
+				readingsList = null;
+			}
+			
+			if (outputArray != null)
+			{
+				outputArray.length = 0;
+				outputArray = null;
+			}
 			
 			//Warn listeners
 			_instance.dispatchEventWith(starling.events.Event.COMPLETE);
@@ -226,7 +246,7 @@ package utils
 			actionButtonsContainer.addChild(sendButton);
 			
 			/* Callout Position Helper Creation */
-			var positionHelper:Sprite = new Sprite();
+			positionHelper = new Sprite();
 			positionHelper.x = Constants.stageWidth / 2;
 			positionHelper.y = 70;
 			Starling.current.stage.addChild(positionHelper);
@@ -251,6 +271,9 @@ package utils
 		
 		private static function closeCallout():void
 		{
+			if (siDiarySenderCallout == null)
+				return;
+			
 			//Close the callout
 			if (PopUpManager.isPopUp(siDiarySenderCallout))
 				PopUpManager.removePopUp(siDiarySenderCallout, true);
@@ -260,6 +283,8 @@ package utils
 		
 		private static function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			//Dispose Objects
 			output = null;
 			fileData = null;
@@ -267,6 +292,13 @@ package utils
 			readingsList = null;
 			
 			//Dispose display objects
+			if (positionHelper != null)
+			{
+				positionHelper.removeFromParent();
+				positionHelper.dispose();
+				positionHelper = null;
+			}
+			
 			if (emailLabel != null)
 			{
 				emailLabel.dispose();
@@ -297,11 +329,17 @@ package utils
 		 */
 		private static function onSend(e:starling.events.Event):void
 		{
+			if (emailLabel == null || sendButton == null || output == null || output == "")
+				return;
+			
 			Trace.myTrace("SiDiary.as", "Sending CSV file...");
 			
 			//Validation
 			emailLabel.text = ModelLocator.resourceManagerInstance.getString('globaltranslations',"user_email_label");
-			emailLabel.fontStyles.color = 0xEEEEEE;
+			if (emailLabel.fontStyles != null)
+				emailLabel.fontStyles.color = 0xEEEEEE;
+			else
+				emailLabel.fontStyles = new TextFormat("Roboto", 14, 0xEEEEEE, HorizontalAlign.CENTER, VerticalAlign.TOP);
 			
 			if (emailField.text == "")
 			{
@@ -396,8 +434,17 @@ package utils
 		{
 			Trace.myTrace("SiDiary.as", "CSV file not sent! User cancelled!");
 			
-			dispose();	
 			closeCallout();
+			dispose();	
+		}
+		
+		private static function onStarlingResize(event:ResizeEvent):void 
+		{
+			if (positionHelper != null)
+				positionHelper.x = Constants.stageWidth / 2;
+			
+			if (emailField != null)
+				SystemUtil.executeWhenApplicationIsActive( emailField.clearFocus );
 		}
 
 		/**

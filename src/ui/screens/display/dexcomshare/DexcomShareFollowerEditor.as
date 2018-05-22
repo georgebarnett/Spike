@@ -36,7 +36,9 @@ package ui.screens.display.dexcomshare
 	
 	import ui.screens.display.LayoutFactory;
 	
+	import utils.Constants;
 	import utils.DeviceInfo;
+	import utils.SpikeJSON;
 	import utils.Trace;
 	
 	[ResourceBundle("sharesettingsscreen")]
@@ -130,16 +132,16 @@ package ui.screens.display.dexcomshare
 			isSelectable = false;
 			autoHideBackground = true;
 			hasElasticEdges = false;
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
 				width = 250;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				width = 240;
 			else
 				width = 300;
 			
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
 				height = 300;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6 || Constants.deviceModel == DeviceInfo.IPHONE_X)
 				height = 400;
 			else
 				height = 500;
@@ -194,7 +196,7 @@ package ui.screens.display.dexcomshare
 			followerName.addEventListener(FeathersEventType.ENTER, onTextInputEnter);
 			
 			followerEmail = LayoutFactory.createLabel(followerInfoExtended.Email, HorizontalAlign.RIGHT, VerticalAlign.TOP, 9);
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				followerEmail.width = 150;
 			else
 				followerEmail.width = 160;
@@ -890,7 +892,8 @@ package ui.screens.display.dexcomshare
 			
 			try
 			{
-				responseInfo = JSON.parse(response);
+				//responseInfo = JSON.parse(response);
+				responseInfo = SpikeJSON.parse(response);
 			} 
 			catch(error:Error) 
 			{

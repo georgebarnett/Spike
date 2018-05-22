@@ -2,8 +2,6 @@ package ui.screens.display.dexcomshare
 {
 	import com.distriqt.extension.networkinfo.NetworkInfo;
 	
-	import mx.utils.ObjectUtil;
-	
 	import events.DexcomShareEvent;
 	
 	import feathers.controls.Button;
@@ -20,6 +18,7 @@ package ui.screens.display.dexcomshare
 	import feathers.layout.HorizontalAlign;
 	import feathers.layout.HorizontalLayout;
 	import feathers.layout.VerticalAlign;
+	import feathers.themes.BaseMaterialDeepGreyAmberMobileTheme;
 	import feathers.themes.MaterialDeepGreyAmberMobileThemeIcons;
 	
 	import model.ModelLocator;
@@ -29,10 +28,13 @@ package ui.screens.display.dexcomshare
 	import starling.core.Starling;
 	import starling.display.Sprite;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.screens.display.LayoutFactory;
 	
+	import utils.Constants;
 	import utils.DeviceInfo;
+	import utils.SpikeJSON;
 	import utils.Trace;
 	
 	[ResourceBundle("sharesettingsscreen")]
@@ -77,6 +79,8 @@ package ui.screens.display.dexcomshare
 		{
 			super.initialize();
 			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			setupProperties();
 			setupPreloader();
 			Starling.juggler.delayCall(setupInitialContent, 1.5);
@@ -92,9 +96,9 @@ package ui.screens.display.dexcomshare
 			isSelectable = false;
 			autoHideBackground = true;
 			hasElasticEdges = false;
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
 				width = 250;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				width = 240;
 			else
 				width = 300;
@@ -405,7 +409,8 @@ package ui.screens.display.dexcomshare
 			
 			try
 			{
-				responseInfo = JSON.parse(response);
+				//responseInfo = JSON.parse(response);
+				responseInfo = SpikeJSON.parse(response);
 			} 
 			catch(error:Error) 
 			{
@@ -415,11 +420,22 @@ package ui.screens.display.dexcomshare
 			return responseInfo;
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			if (positionHelper != null)
+				positionHelper.x = this.width / 2;
+			
+			if (errorLabel != null)
+				errorLabel.width = width - 20;
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if (followerManagmentAccessoriesList != null && followerManagmentAccessoriesList.length > 0)
 			{
 				var loopLength:uint = followerManagmentAccessoriesList.length;

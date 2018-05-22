@@ -2,6 +2,7 @@ package ui.screens.display.settings.transmitter
 {
 	import database.BlueToothDevice;
 	import database.CommonSettings;
+	import database.Sensor;
 	
 	import feathers.controls.Alert;
 	import feathers.controls.Button;
@@ -18,7 +19,9 @@ package ui.screens.display.settings.transmitter
 	
 	import model.ModelLocator;
 	
+	import starling.core.Starling;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	import starling.text.TextFormat;
 	
 	import ui.AppInterface;
@@ -54,6 +57,8 @@ package ui.screens.display.settings.transmitter
 		{
 			super.initialize();
 			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			setupProperties();
 			setupInitialState();
 			setupContent();
@@ -82,7 +87,6 @@ package ui.screens.display.settings.transmitter
 			if (!BlueToothDevice.needsTransmitterId())
 				transmitterIDValue = "";
 			transmitterTypeValue = CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE);
-			trace("transmitterTypeValue", transmitterTypeValue);
 			
 			/* Ensure BluCon and Dexcom compatibility */
 			if (transmitterTypeValue == "BluKon")
@@ -91,8 +95,19 @@ package ui.screens.display.settings.transmitter
 				transmitterTypeValue = ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_dexcom_g5');
 			else if (transmitterTypeValue == "G4")
 				transmitterTypeValue = ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_dexcom_g4');
-			else if (!BlueToothDevice.needsTransmitterId() || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_limitter') || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_bluereader') || transmitterTypeValue.toUpperCase() == "TRANSMITER PL")
+			else if (!BlueToothDevice.needsTransmitterId() || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_limitter') || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_bluereader') || transmitterTypeValue.toUpperCase() == "TRANSMITER PL" || transmitterTypeValue.toUpperCase() == "MIAOMIAO")
 				transmitterIDisEnabled = false;
+			
+			if ((transmitterTypeValue != "" && transmitterTypeValue.toUpperCase() != "FOLLOW") || transmitterIDValue != "")
+			{
+				Starling.juggler.delayCall
+				(
+					AlertManager.showSimpleAlert,
+					2,
+					ModelLocator.resourceManagerInstance.getString('globaltranslations','warning_alert_title'),
+					ModelLocator.resourceManagerInstance.getString('transmitterscreen','reset_sensor_warning')
+				);
+			}
 		}
 		
 		private function setupContent():void
@@ -112,7 +127,7 @@ package ui.screens.display.settings.transmitter
 			transmitterType.labelField = "label";
 			transmitterType.popUpContentManager = new DropDownPopUpContentManager();
 			transmitterType.dataProvider = transmitterTypeList;
-			if(DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			if(Constants.deviceModel == DeviceInfo.IPHONE_X)
 			{
 				transmitterType.buttonFactory = function():Button
 				{
@@ -140,7 +155,7 @@ package ui.screens.display.settings.transmitter
 			transmitterType.addEventListener(Event.CHANGE, onTransmitterTypeChange);
 			
 			//Transmitter ID
-			transmitterID = LayoutFactory.createTextInput(false, false, 100, HorizontalAlign.RIGHT);
+			transmitterID = LayoutFactory.createTextInput(false, false, Constants.isPortrait ? 100 : 150, HorizontalAlign.RIGHT);
 			transmitterID.text = transmitterIDValue;
 			populateTransmitterIDPrompt();
 			transmitterID.addEventListener( FeathersEventType.ENTER, onTextInputEnter );
@@ -190,7 +205,7 @@ package ui.screens.display.settings.transmitter
 				transmitterIDisEnabled = transmitterID.isEnabled = true;
 				transmitterID.prompt = "BLUXXXXX";
 			}
-			else if ((!BlueToothDevice.needsTransmitterId() || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_limitter') || transmitterTypeValue.toUpperCase() == "TRANSMITER PL") && transmitterID.text == "")
+			else if ((!BlueToothDevice.needsTransmitterId() || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_limitter') || transmitterTypeValue.toUpperCase() == "TRANSMITER PL" || transmitterTypeValue.toUpperCase() == "MIAOMIAO") && transmitterID.text == "")
 			{
 				transmitterIDisEnabled = transmitterID.isEnabled = false;
 				transmitterID.prompt = "";
@@ -199,8 +214,13 @@ package ui.screens.display.settings.transmitter
 		
 		public function save():void
 		{
+			var needsReset:Boolean = false;
+			
 			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_TRANSMITTER_ID) != transmitterIDValue.toUpperCase())
+			{
 				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_TRANSMITTER_ID, transmitterIDValue.toUpperCase());
+				needsReset = true;
+			}
 			
 			/* Save BluCon as BluKon in database to ensure compatibility, correct Dexcom G5 and G4 values */
 			var transmitterTypeToSave:String = transmitterTypeValue;
@@ -211,28 +231,39 @@ package ui.screens.display.settings.transmitter
 			else if (transmitterTypeToSave == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_dexcom_g4'))
 				transmitterTypeToSave = "G4";
 			
-			if(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE) != transmitterTypeToSave)
+			if(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE) != transmitterTypeToSave && !warnUser)
 			{
 				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE, transmitterTypeToSave);
 				updateAlarms(); //Update battery values in existing alarms or delete them in case it's not possible to get alarms for the selected transmitter type
+				needsReset = true;
 			}
 			
-			//Reset all transmitters battery levels
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_VOLTAGEA, "unknown");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_VOLTAGEB, "unknown");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_RESIST, "unknown");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_TEMPERATURE, "unknown");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_RUNTIME, "unknown");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_STATUS, "unknown");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_BATTERY_FROM_MARKER, "0");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G4_TRANSMITTER_BATTERY_VOLTAGE, "0");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_FSL_SENSOR_BATTERY_LEVEL, "0");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_BLUEREADER_BATTERY_LEVEL, "0");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_BLUKON_BATTERY_LEVEL, "0");
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_FSL_SENSOR_AGE, "0");
-			
-			//Set collection mode to host
-			CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_MODE, "Host");
+			if (needsReset)
+			{
+				//Reset all transmitters battery levels
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_VOLTAGEA, "unknown");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_VOLTAGEB, "unknown");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_RESIST, "unknown");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_TEMPERATURE, "unknown");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_RUNTIME, "unknown");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_STATUS, "unknown");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_BATTERY_FROM_MARKER, "0");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G4_TRANSMITTER_BATTERY_VOLTAGE, "0");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_FSL_SENSOR_BATTERY_LEVEL, "0");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_BLUEREADER_BATTERY_LEVEL, "0");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_BLUKON_BATTERY_LEVEL, "0");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_MIAOMIAO_BATTERY_LEVEL, "0");
+				
+				//Reset Firmware version
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_MIAOMIAO_FW, "");
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_G5_VERSION_INFO, "");
+				
+				//Set collection mode to host
+				CommonSettings.setCommonSetting(CommonSettings.COMMON_SETTING_DATA_COLLECTION_MODE, "Host");
+				
+				//Stop sensor
+				Sensor.stopSensor();
+			}
 			
 			//Refresh main menu. Menu items are different for hosts and followers
 			AppInterface.instance.menu.refreshContent();
@@ -271,6 +302,8 @@ package ui.screens.display.settings.transmitter
 				batteryValue = "210";
 			else if (transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_blucon'))
 				batteryValue = "5";
+			else if (transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_miaomiao'))
+				batteryValue = "20";
 			
 			//Process Alarms
 			if (transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_bluereader') || transmitterTypeValue == ModelLocator.resourceManagerInstance.getString('transmitterscreen','device_limitter'))
@@ -413,11 +446,20 @@ package ui.screens.display.settings.transmitter
 			populateTransmitterIDPrompt();
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+			
+			if (transmitterID != null)
+				transmitterID.width = Constants.isPortrait ? 100 : 150;
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			removeEventListener(FeathersEventType.CREATION_COMPLETE, onCreation);
 			
 			if(transmitterID != null)

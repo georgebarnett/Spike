@@ -35,6 +35,7 @@ package ui.screens.display.settings.alarms
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
 	
+	import utils.Constants;
 	import utils.DeviceInfo;
 	
 	[ResourceBundle("alertsettingsscreen")]
@@ -155,7 +156,7 @@ package ui.screens.display.settings.alarms
 			enableSnoozeInNotification = LayoutFactory.createCheckMark(enableSnoozeInNotificationValue);
 			enableSnoozeInNotification.addEventListener(Event.CHANGE, onSettingsChanged);
 			
-			snoozeMinutes = LayoutFactory.createNumericStepper(0, 999, snoozeMinutesValue);
+			snoozeMinutes = LayoutFactory.createNumericStepper(0, 9999, snoozeMinutesValue);
 			snoozeMinutes.pivotX = -12;
 			snoozeMinutes.addEventListener(Event.CHANGE, onSettingsChanged);
 			
@@ -249,7 +250,7 @@ package ui.screens.display.settings.alarms
 					{ label: ModelLocator.resourceManagerInstance.getString('globaltranslations',"enabled"), accessory: alertEnabled },
 					{ label: ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"name_label"), accessory: alertName },
 					{ label: ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"snooze_notification_label"), accessory: enableSnoozeInNotification },
-					{ label: DeviceInfo.getDeviceType() != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"default_snooze_time_label") : ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"default_snooze_time_iphone_x_label"), accessory: snoozeMinutes },
+					{ label: Constants.deviceModel != DeviceInfo.IPHONE_X ? ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"default_snooze_time_label") : ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"default_snooze_time_iphone_x_label"), accessory: snoozeMinutes },
 					{ label: ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"repeat_label"), accessory: enableRepeat },
 					{ label: ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"sound_label"), accessory: soundList },
 					{ label: ModelLocator.resourceManagerInstance.getString('alertsettingsscreen',"vibration_label"), accessory: enableVibration },
@@ -263,7 +264,7 @@ package ui.screens.display.settings.alarms
 				item.labelField = "label";
 				item.accessoryField = "accessory";
 				item.paddingRight = 0;
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+				if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 					item.paddingRight = -2;
 				item.accessoryOffsetX = -10;
 					

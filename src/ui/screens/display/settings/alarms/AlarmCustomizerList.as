@@ -9,6 +9,7 @@ package ui.screens.display.settings.alarms
 	import feathers.controls.Button;
 	import feathers.controls.Callout;
 	import feathers.controls.List;
+	import feathers.controls.ScrollContainer;
 	import feathers.controls.renderers.DefaultListItemRenderer;
 	import feathers.controls.renderers.IListItemRenderer;
 	import feathers.core.PopUpManager;
@@ -21,6 +22,7 @@ package ui.screens.display.settings.alarms
 	import starling.core.Starling;
 	import starling.display.Sprite;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	import starling.text.TextFormat;
 	
 	import ui.popups.AlertManager;
@@ -68,6 +70,8 @@ package ui.screens.display.settings.alarms
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupInitialContent();
@@ -194,11 +198,11 @@ package ui.screens.display.settings.alarms
 				
 				//Create alarm controls, define event listeners and save them for disposal
 				var alarmControls:AlarmManagerAccessory = new AlarmManagerAccessory();
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8)
+				if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6 || Constants.deviceModel == DeviceInfo.IPHONE_6_6S_7_8)
 					alarmControls.scale = 0.8;
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
+				else if (Constants.deviceModel == DeviceInfo.IPHONE_6_6S_7_8 || Constants.deviceModel == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
 					alarmControls.scale = 0.9;
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+				else if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 					alarmControls.scale = 0.7;
 				alarmControls.pivotX = -8;
 				alarmControls.addEventListener(AlarmManagerAccessory.EDIT, onEditAlarm);
@@ -224,11 +228,11 @@ package ui.screens.display.settings.alarms
 			{
 				const item:DefaultListItemRenderer = new DefaultListItemRenderer();
 				item.labelField = "label";
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8)
+				if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6 || Constants.deviceModel == DeviceInfo.IPHONE_6_6S_7_8)
 					item.fontStyles = new TextFormat("Roboto", 11, 0xEEEEEE, "left", "top");
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
+				else if (Constants.deviceModel == DeviceInfo.IPHONE_6_6S_7_8 || Constants.deviceModel == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
 					item.fontStyles = new TextFormat("Roboto", 12, 0xEEEEEE, "left", "top");
-				else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+				else if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 					item.fontStyles = new TextFormat("Roboto", 9, 0xEEEEEE, "left", "top");
 				item.accessoryField = "accessory";
 				item.accessoryOffsetX = -8;
@@ -401,7 +405,7 @@ package ui.screens.display.settings.alarms
 		
 		private function showAlarmCustomizerCallout(forceCreation:Boolean = false):void
 		{
-			if (forceCreation)
+			if (forceCreation || alarmCustomizerCallout == null)
 			{
 				setupCalloutPosition();
 				
@@ -572,11 +576,21 @@ package ui.screens.display.settings.alarms
 			}
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+			
+			if (positionHelper != null)
+				positionHelper.x = (Constants.stageWidth - (BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding * 2)) / 2;
+		}
+		
 		/**
 		 * Utility
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if (alarmCustomizerCallout != null)
 			{
 				alarmCustomizerCallout.dispose();

@@ -52,9 +52,11 @@ package model
 	import services.WatchService;
 	import services.WidgetService;
 	
+	import treatments.ProfileManager;
+	import treatments.TreatmentsManager;
+	
 	import ui.AppInterface;
 	import ui.InterfaceController;
-	import ui.popups.AlarmSnoozer;
 	import ui.popups.AlertManager;
 	
 	import utils.Constants;
@@ -68,9 +70,8 @@ package model
 
 		public static const MAX_DAYS_TO_STORE_BGREADINGS_IN_MODELLOCATOR:int = 1;
 		public static const MAX_TIME_FOR_BGREADINGS:int = MAX_DAYS_TO_STORE_BGREADINGS_IN_MODELLOCATOR * 24 * 60 * 60 * 1000 + Constants.READING_OFFSET;
-		public static const DEBUG_MODE:Boolean = true;
 
-		public static const TEST_FLIGHT_MODE:Boolean = false;
+		public static const TEST_FLIGHT_MODE:Boolean = true;
 		public static const INTERNAL_TESTING:Boolean = false;
 		
 		public static function get instance():ModelLocator
@@ -145,9 +146,10 @@ package model
 				Database.instance.removeEventListener(DatabaseEvent.BGREADING_RETRIEVAL_EVENT, bgReadingsReceivedFromDatabase);
 				
 				_bgReadings = de.data as Array;
+				ProfileManager.init();
+				TreatmentsManager.init();
 				AppInterface.instance.init(); //Start rendering interface now that all data is available
 				AlertManager.init();
-				AlarmSnoozer.init();
 				DeepSleepService.init();
 				Database.getBlueToothDevice();
 				TransmitterService.init();
@@ -158,7 +160,7 @@ package model
 				CalibrationService.init();
 				NetworkInfo.init(DistriqtKey.distriqtKey);
 				BackgroundFetch.setAvAudioSessionCategory(true);
-				BackgroundFetch.isVersion1_4_0();//to make sure the correct ANE is used
+				BackgroundFetch.isVersion2_1_1()//to make sure the correct ANE is used
 				WidgetService.init();
 				WatchService.init();
 				AlarmService.init();
@@ -170,10 +172,8 @@ package model
 				TextToSpeechService.init();
 				RemoteAlertService.init();
 				if (!TEST_FLIGHT_MODE) UpdateService.init();
-				
 				updateApplicationVersion();
 			}
-
 		}
 		
 		private static function updateApplicationVersion():void 
@@ -204,6 +204,31 @@ package model
 					
 				firstBGReading = _bgReadings[0] as BgReading;
 			}
+		}
+		
+		/**
+		 * returns true if last reading was successfully removed 
+		 */
+		public static function removeLastBgReading():Boolean 
+		{
+			if (_bgReadings.length > 0) 
+			{
+				var removedReading:BgReading = _bgReadings.pop() as BgReading;
+				Database.deleteBgReadingSynchronous(removedReading);
+				return true;
+			}
+			
+			return false;
+		}
+		
+		public static function getLastBgReading():BgReading 
+		{
+			if (_bgReadings.length > 0) 
+			{
+				return _bgReadings[_bgReadings.length - 1] as BgReading;
+			}
+			
+			return null;
 		}
 	}
 }

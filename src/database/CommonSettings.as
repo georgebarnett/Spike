@@ -177,14 +177,16 @@
 		  */
 		 public static const COMMON_SETTING_FSL_SENSOR_BATTERY_LEVEL:int = 36;
 		 /**
-		  * For limitter and/or bluereaderw<br>
+		  * For bluereaderw<br>
 		  * value 0 means level not known
 		  */
 		 public static const COMMON_SETTING_BLUEREADER_BATTERY_LEVEL:int = 37;
 		 /**
-		  * For limitter and/or bluereaderw<br>
+		  * For any device that reads Freestyle and that gets the sensorage from the Freestyle sensor<br>
+		  * This is not the case for Bluereader, bluereader doesn't read the sensorage from the sensor, COMMON_SETTING_FSL_SENSOR_AGE will remain 0<br>
+		  * <br>
 		  * value 0 means level not known<br>
-		  * time in minutes
+		  * time in minutes<br>
 		  */
 		 public static const COMMON_SETTING_FSL_SENSOR_AGE:int = 38;
 		 /**
@@ -193,6 +195,9 @@
 		  */
 		 public static const COMMON_SETTING_BLUKON_BATTERY_LEVEL:int = 39;
 		 
+		 /**
+		 * For blucon only, sensor age check is done only every x hours (constant in Bluetoothservice)
+		  */
 		 public static const COMMON_SETTING_TIME_STAMP_LAST_SENSOR_AGE_CHECK_IN_MS:int = 40;
 		 
 		 /**
@@ -327,6 +332,88 @@
 		  * Follower #2
 		  */
 		 public static const COMMON_SETTING_DATA_COLLECTION_NS_OFFSET:int = 114;
+		 public static const COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET:int = 115;
+		 
+		 /**
+		  * Deep Sleep Timer #3
+		  */
+		 public static const COMMON_SETTING_DEEP_SLEEP_ALTERNATIVE_MODE_2:int = 116;
+		 
+		 /**
+		  * MiaoMiao	 
+		  */
+		 public static const COMMON_SETTING_NFC_AGE_PROBEM:int = 117;
+		 public static const COMMON_SETTING_MIAOMIAO_BATTERY_LEVEL:int = 118;
+		 public static const COMMON_SETTING_MIAOMIAO_HARDWARE:int = 119;
+		 public static const COMMON_SETTING_MIAOMIAO_FW:int = 120;
+		 
+		 /**
+		 * Healthkit
+		 */
+		 public static const COMMON_SETTING_HEALTHKIT_SYNC_TIMESTAMP:int = 121;
+		 
+		 /**
+		  * Treatments
+		  */
+		 public static const COMMON_SETTING_TREATMENTS_ENABLED:int = 122;
+		 public static const COMMON_SETTING_TREATMENTS_ON_CHART_ENABLED:int = 123;
+		 public static const COMMON_SETTING_TREATMENTS_NIGHTSCOUT_DOWNLOAD_ENABLED:int = 124;
+		 public static const COMMON_SETTING_TREATMENTS_IOB_ENABLED:int = 125;
+		 public static const COMMON_SETTING_TREATMENTS_COB_ENABLED:int = 126;
+		 public static const COMMON_SETTING_TREATMENTS_INSULIN_MARKER_COLOR:int = 127;
+		 public static const COMMON_SETTING_TREATMENTS_CARBS_MARKER_COLOR:int = 128;
+		 public static const COMMON_SETTING_TREATMENTS_BGCHECK_MARKER_COLOR:int = 129;
+		 public static const COMMON_SETTING_TREATMENTS_PILL_COLOR:int = 130;
+		 public static const COMMON_SETTING_TREATMENTS_STROKE_COLOR:int = 131;
+		 public static const COMMON_SETTING_TREATMENTS_NEW_SENSOR_MARKER_COLOR:int = 132;
+		 
+		 /**
+		 * Chart
+		 */
+		 public static const COMMON_SETTING_CHART_ROUND_MGDL_ON:int = 133;
+		 /** 
+		  * bluereader battery management
+		  */
+		 public static const COMMON_SETTING_BLUEREADER_FULL_BATTERY:int = 134;
+		 /**
+		  * xbrdiger battery level
+		  */
+		 public static const COMMON_SETTING_XBRIDGER_BATTERY_LEVEL:int = 135;
+
+		 /**
+		 * warning will be given after 14 days that sensor is about to expire, can still last for 12 hours after that 
+		  */
+		 public static const COMMON_SETTING_LIBRE_SENSOR_14DAYS_WARNING_GIVEN:int = 136;
+		 
+		 /**
+		 * if true, for any device type limitter, default calibration will be used<br>
+		  */
+		 public static const COMMON_SETTTING_LIBRE_USE_DEFAULT_CALIBRATION:int = 137;
+		 
+		 /**
+		  * Treatments #2
+		  */
+		 public static const COMMON_SETTING_TREATMENTS_LOOP_OPENAPS_USER_ENABLED:int = 138;
+		 
+		 /**
+		  * Pie Chart #2
+		  */
+		 public static const COMMON_SETTING_PIE_CHART_A1C_OFFSET:int = 139;
+		 public static const COMMON_SETTING_PIE_CHART_AVG_OFFSET:int = 140;
+		 public static const COMMON_SETTING_PIE_CHART_RANGES_OFFSET:int = 141;
+		 
+		 /**
+		 * G5 firmware info, empty string means not known<br>
+		 * The contents is the hex string as received from G5<br>
+		 * To read the contents, G5VersionInfo.getG5VersionInfo
+		  */
+		 public static const COMMON_SETTING_G5_VERSION_INFO:int = 142;
+		 
+		 /**
+		  * Apply IFCC calculation to A1C values
+		  * Useful for some countries like New Zealand.
+		  */
+		 public static const COMMON_SETTING_PIE_CHART_A1C_IFCC_ON:int = 143;
 
 		 private static var commonSettings:Array = [
 			 "0",//COMMON_SETTING_CURRENT_SENSOR
@@ -361,7 +448,7 @@
 			 "unknown",//COMMON_SETTING_G5_TEMPERATURE
 			 "unknown",//COMMON_SETTING_G5_RUNTIME
 			 "00:00>0>DefaultNoAlertToBeReplaced",//COMMON_SETTING_BATTERY_ALERT
-			 "00:00>0>DefaultNoAlertToBeReplaced",//COMMON_SETTING_CALIBRATION_REQUEST_ALERT
+			 "00:00>24>DefaultNoAlertToBeReplaced-08:00>24>SilentToBeReplaced-23:00>24>DefaultNoAlertToBeReplaced",//COMMON_SETTING_CALIBRATION_REQUEST_ALERT
 			 "00:00>0>DefaultNoAlertToBeReplaced",//COMMON_SETTING_VERY_LOW_ALERT
 			 "00:00>0>DefaultNoAlertToBeReplaced",//COMMON_SETTING_VERY_HIGH_ALERT
 			 "0",//COMMON_SETTING_FSL_SENSOR_BATTERY_LEVEL
@@ -443,7 +530,36 @@
 			 "65280",//COMMON_SETTING_PIE_CHART_IN_RANGE_COLOR
 			 "16776960",//COMMON_SETTING_PIE_CHART_HIGH_COLOR
 			 "false",//COMMON_SETTING_DEEP_SLEEP_ALTERNATIVE_MODE
-			 "0"//COMMON_SETTING_DATA_COLLECTION_NS_OFFSET
+			 "0",//COMMON_SETTING_DATA_COLLECTION_NS_OFFSET
+			 "",//COMMON_SETTING_DATA_COLLECTION_NS_API_SECRET
+			"false",//COMMON_SETTING_DEEP_SLEEP_ALTERNATIVE_MODE_2
+			 "false",//COMMON_SETTING_NFC_AGE_PROBEM
+			 "0",//COMMON_SETTING_MIAOMIAO_BATTERY_LEVEL
+			 "",//COMMON_SETTING_MIAOMIAO_HARDWARE
+			 "",//COMMON_SETTING_MIAOMIAO_FW
+			 "0",//COMMON_SETTING_HEALTHKIT_SYNC_TIMESTAMP
+			 "true",//COMMON_SETTING_TREATMENTS_ENABLED
+			 "true",//COMMON_SETTING_TREATMENTS_ON_CHART_ENABLED
+			 "true",//COMMON_SETTING_TREATMENTS_NIGHTSCOUT_DOWNLOAD_ENABLED
+			 "true",//COMMON_SETTING_TREATMENTS_IOB_ENABLED
+			 "true",//COMMON_SETTING_TREATMENTS_COB_ENABLED
+			 "0x0086FF",//COMMON_SETTING_TREATMENTS_INSULIN_MARKER_COLOR
+			 "0xF8A246",//COMMON_SETTING_TREATMENTS_CARBS_MARKER_COLOR
+			 "0xFF0000",//COMMON_SETTING_TREATMENTS_BGCHECK_MARKER_COLOR
+			 "0xEEEEEE",//COMMON_SETTING_TREATMENTS_PILL_COLOR
+			 "0xEEEEEE",//COMMON_SETTING_TREATMENTS_STROKE_COLOR
+			 "0x666666",//COMMON_SETTING_TREATMENTS_NEW_SENSOR_MARKER_COLOR
+			 "false",//COMMON_SETTING_CHART_ROUND_MGDL_ON
+			 "0",//COMMON_SETTING_BLUEREADER_FULL_BATTERY
+			 "0",//COMMON_SETTING_XBRIDGER_BATTERY_LEVEL
+			 "false",//COMMON_SETTING_LIBRE_SENSOR_14DAYS_WARNING_GIVEN
+			 "false",//COMMON_SETTTING_LIBRE_USE_DEFAULT_CALIBRATION
+			 "false",//COMMON_SETTING_TREATMENTS_LOOP_OPENAPS_USER_ENABLED
+			 "86400000",//COMMON_SETTING_PIE_CHART_A1C_OFFSET (1 DAY)
+			 "86400000",//COMMON_SETTING_PIE_CHART_AVG_OFFSET (1 DAY)
+			 "86400000",//COMMON_SETTING_PIE_CHART_RANGES_OFFSET (1 DAY)
+			 "",//COMMON_SETTING_G5_VERSION_INFO
+			 "false"//COMMON_SETTING_PIE_CHART_A1C_IFCC_ON
 		 ];
 
 		 public function CommonSettings()
@@ -458,6 +574,8 @@
 			 var newString:String;
 			 if (commonSettingId == COMMON_SETTING_BATTERY_ALERT) {
 				 if ((commonSettings[COMMON_SETTING_BATTERY_ALERT] as String).indexOf('DefaultValue') > -1) {
+					 //actually the alert value is reset when user changes the transmittertype, which is each time the app starts
+					 //as a result this branch is not useful anymore
 					 newString = (commonSettings[COMMON_SETTING_BATTERY_ALERT] as String)
 						 .replace('DefaultValue', "300");//default value for G5 is 300 - if user picks other transmitter type, (s)he will need to change the default value
 					 setCommonSetting(COMMON_SETTING_BATTERY_ALERT, newString);

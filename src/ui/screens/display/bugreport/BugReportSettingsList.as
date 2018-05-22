@@ -36,8 +36,11 @@ package ui.screens.display.bugreport
 	
 	import network.EmailSender;
 	
+	import starling.core.Starling;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	import starling.text.TextFormat;
+	import starling.utils.SystemUtil;
 	
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
@@ -46,6 +49,7 @@ package ui.screens.display.bugreport
 	import utils.DataValidator;
 	import utils.DeviceInfo;
 	import utils.TimeSpan;
+	import utils.Trace;
 
 	[ResourceBundle("bugreportsettingsscreen")]
 	[ResourceBundle("globaltranslations")]
@@ -72,6 +76,8 @@ package ui.screens.display.bugreport
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupInitialContent();
@@ -102,22 +108,25 @@ package ui.screens.display.bugreport
 		{
 			//Calculate fields dimensions
 			var fieldWidth:int;
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4 || Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
 				fieldWidth = 165;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6_6S_7_8 || DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_6_6S_7_8 || Constants.deviceModel == DeviceInfo.IPHONE_6PLUS_6SPLUS_7PLUS_8PLUS)
 				fieldWidth = 200;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_X)
+			else if (Constants.deviceModel == DeviceInfo.IPHONE_X)
 				fieldWidth = 155;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97)
+			else if (Constants.deviceModel == DeviceInfo.IPAD_1_2_3_4_5_AIR1_2_PRO_97)
 				fieldWidth = 400;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_PRO_105)
+			else if (Constants.deviceModel == DeviceInfo.IPAD_PRO_105)
 				fieldWidth = 450;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_PRO_129)
+			else if (Constants.deviceModel == DeviceInfo.IPAD_PRO_129)
 				fieldWidth = 550;
-			else if (DeviceInfo.getDeviceType() == DeviceInfo.IPAD_MINI_1_2_3_4)
+			else if (Constants.deviceModel == DeviceInfo.IPAD_MINI_1_2_3_4)
 				fieldWidth = 300;
 			else
 				fieldWidth = 200;
+			
+			if (!Constants.isPortrait)
+				fieldWidth += 100;
 			
 			//On/Off Toggle
 			traceToggle = LayoutFactory.createToggleSwitch(isTraceEnabled);
@@ -128,11 +137,13 @@ package ui.screens.display.bugreport
 			nameField = LayoutFactory.createTextInput(false, false, fieldWidth, HorizontalAlign.RIGHT);
 			nameField.addEventListener(FeathersEventType.ENTER, onKeyboardEnter);
 			nameField.pivotX = 6;
+			nameField.text = LocalSettings.getLocalSetting(LocalSettings.LOCAL_SETTING_BUG_REPORT_NAME);
 			
 			//Email Field
 			emailField = LayoutFactory.createTextInput(false, false, fieldWidth, HorizontalAlign.RIGHT);
 			emailField.addEventListener(FeathersEventType.ENTER, onKeyboardEnter);
 			emailField.pivotX = 6;
+			emailField.text = LocalSettings.getLocalSetting(LocalSettings.LOCAL_SETTING_BUG_REPORT_EMAIL);
 			
 			//Text Area
 			messageField = new TextArea();
@@ -155,7 +166,7 @@ package ui.screens.display.bugreport
 			//Instructions Description Label
 			warningDescriptionLabel = new Label();
 			warningDescriptionLabel.text = ModelLocator.resourceManagerInstance.getString('bugreportsettingsscreen','warning_description');
-			warningDescriptionLabel.width = width - 20;
+			warningDescriptionLabel.width = width;
 			warningDescriptionLabel.wordWrap = true;
 			warningDescriptionLabel.paddingTop = 10;
 			warningDescriptionLabel.isQuickHitAreaEnabled = false;
@@ -253,8 +264,6 @@ package ui.screens.display.bugreport
 			if (!isTraceEnabled)
 			{
 				resetLogFile();
-				nameField.text = "";
-				emailField.text = "";
 				messageField.text = "";
 			}
 		}
@@ -313,6 +322,10 @@ package ui.screens.display.bugreport
 				return;
 			}
 			
+			//Store name and email, they will be used to prefill the fields next time
+			LocalSettings.setLocalSetting(LocalSettings.LOCAL_SETTING_BUG_REPORT_EMAIL, emailField.text);
+			LocalSettings.setLocalSetting(LocalSettings.LOCAL_SETTING_BUG_REPORT_NAME, nameField.text);
+			
 			//Temporarly disable send button
 			sendEmail.label = ModelLocator.resourceManagerInstance.getString('bugreportsettingsscreen','stand_by_button_label');
 			sendEmail.isEnabled = false;
@@ -329,6 +342,8 @@ package ui.screens.display.bugreport
 					
 					if (traceLogAgeInMinutes >= 15)
 					{
+						Trace.myTrace("BugReportSettingsList.as", "Sending log!");
+						
 						//Get the trace log
 						var fileStream:FileStream = new FileStream();
 						fileStream.open(file, FileMode.READ);
@@ -347,7 +362,7 @@ package ui.screens.display.bugreport
 						var vars:URLVariables = new URLVariables();
 						vars.fileName = fileName;
 						vars.mimeType = "text/plain";
-						vars.emailSubject = "Bug Report";
+						vars.emailSubject = "Bug Report by " + nameField.text;
 						vars.emailBody = emailBody;
 						vars.userEmail = emailField.text;
 						vars.mode = EmailSender.MODE_EMAIL_SUPPORT;
@@ -416,12 +431,18 @@ package ui.screens.display.bugreport
 		private function onLoadCompleteHandler(event:flash.events.Event):void 
 		{ 
 			var loader:URLLoader = URLLoader(event.target);
-			loader.removeEventListener(flash.events.Event.COMPLETE, onLoadCompleteHandler);
+			if (loader == null || loader.data == null)
+				return;
 			
 			var response:Object = loader.data;
+			
+			loader.removeEventListener(flash.events.Event.COMPLETE, onLoadCompleteHandler);
 			loader = null;
 			
-			if (response.success == "true")
+			if (sendEmail == null)
+				return;
+			
+			if (response.success != null && response.success == "true")
 			{
 				AlertManager.showSimpleAlert
 				(
@@ -457,11 +478,19 @@ package ui.screens.display.bugreport
 			messageField.clearFocus();
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+			SystemUtil.executeWhenApplicationIsActive( setupContent );
+		}
+		
 		/**
 		 * Utilty
 		 */
 		override public function dispose():void
 		{
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if(traceToggle != null)
 			{
 				traceToggle.removeEventListener( starling.events.Event.CHANGE, onTraceOnOff );

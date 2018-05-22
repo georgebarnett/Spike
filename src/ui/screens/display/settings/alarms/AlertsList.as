@@ -16,8 +16,10 @@ package ui.screens.display.settings.alarms
 	
 	import model.ModelLocator;
 	
+	import starling.core.Starling;
 	import starling.display.Sprite;
 	import starling.events.Event;
+	import starling.events.ResizeEvent;
 	
 	import ui.popups.AlertManager;
 	import ui.screens.display.LayoutFactory;
@@ -47,6 +49,8 @@ package ui.screens.display.settings.alarms
 		override protected function initialize():void 
 		{
 			super.initialize();
+			
+			Starling.current.stage.addEventListener(starling.events.Event.RESIZE, onStarlingResize);
 			
 			setupProperties();
 			setupInitialContent();
@@ -134,11 +138,11 @@ package ui.screens.display.settings.alarms
 			alertCreatorCallout = new Callout();
 			alertCreatorCallout.content = alertCreatorList;
 			
-			if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
+			if (Constants.deviceModel == DeviceInfo.IPHONE_2G_3G_3GS_4_4S_ITOUCH_2_3_4)
 				alertCreatorCallout.padding = 18;
 			else
 			{
-				if (DeviceInfo.getDeviceType() == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
+				if (Constants.deviceModel == DeviceInfo.IPHONE_5_5S_5C_SE_ITOUCH_5_6)
 					alertCreatorCallout.padding = 18;
 				
 				setupCalloutPosition();
@@ -229,11 +233,21 @@ package ui.screens.display.settings.alarms
 			alertCreatorCallout.close(true);
 		}
 		
+		private function onStarlingResize(event:ResizeEvent):void 
+		{
+			width = Constants.stageWidth - (2 * BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding);
+			
+			if (positionHelper != null)
+				positionHelper.x = (Constants.stageWidth - (BaseMaterialDeepGreyAmberMobileTheme.defaultPanelPadding * 2)) / 2;
+		}
+		
 		/**
 		 * Utility 
 		 */
 		override public function dispose():void
-		{			
+		{	
+			Starling.current.stage.removeEventListener(starling.events.Event.RESIZE, onStarlingResize);
+			
 			if(addAlertButton != null)
 			{
 				addAlertButton.addEventListener(Event.TRIGGERED, onAddAlert);

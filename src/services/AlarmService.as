@@ -11,7 +11,6 @@ package services
 	import flash.events.TimerEvent;
 	import flash.utils.Timer;
 	
-	import mx.collections.ArrayCollection;
 	import mx.utils.StringUtil;
 	
 	import database.AlertType;
@@ -33,6 +32,7 @@ package services
 	import model.ModelLocator;
 	
 	import starling.events.Event;
+	import starling.utils.SystemUtil;
 	
 	import ui.popups.AlarmSnoozer;
 	
@@ -40,6 +40,7 @@ package services
 	import utils.BgGraphBuilder;
 	import utils.DateTimeUtilities;
 	import utils.FromtimeAndValueArrayCollection;
+	import utils.GlucoseHelper;
 	import utils.Trace;
 	
 	public class AlarmService extends EventDispatcher
@@ -344,8 +345,8 @@ package services
 						CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PHONE_MUTED_ALERT), false);
 					var alertName:String = listOfAlerts.getAlarmName(Number.NaN, "", nowDate);
 					var alertType:AlertType = Database.getAlertType(alertName);
-					if (alertType.enabled) {
-						//alert enabled
+					if (alertType.enabled || CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_SPEAK_READINGS_ON) == "true") {
+						//alert enabled or speak readings is on 
 						myTrace("in checkMuted, calling BackgroundFetch.checkMuted");
 						BackgroundFetch.checkMuted();
 					}
@@ -501,7 +502,13 @@ package services
 						{
 							AlarmSnoozer.instance.addEventListener(AlarmSnoozer.CLOSED, batteryLevelSnoozePicker_closedHandler);
 							AlarmSnoozer.instance.addEventListener(AlarmSnoozer.CANCELLED, snoozePickerChangedOrCanceledHandler);
-							AlarmSnoozer.displaySnoozer(ModelLocator.resourceManagerInstance.getString("alarmservice","snooze_text_battery_alert"), snoozeValueStrings, index);
+							SystemUtil.executeWhenApplicationIsActive
+							(
+								AlarmSnoozer.displaySnoozer,
+								ModelLocator.resourceManagerInstance.getString("alarmservice","snooze_text_battery_alert"),
+								snoozeValueStrings,
+								index
+							);
 						} else if (notificationEvent.identifier == NotificationService.ID_FOR_BATTERY_LEVEL_ALERT_SNOOZE_IDENTIFIER) {
 							_batteryLevelAlertSnoozePeriodInMinutes = alertType.defaultSnoozePeriodInMinutes;
 							myTrace("in notificationReceived with id = ID_FOR_BATTERY_ALERT, snoozing the notification for " + _batteryLevelAlertSnoozePeriodInMinutes + " minutes");
@@ -536,7 +543,7 @@ package services
 							}
 						}
 						if (notificationEvent.identifier == null) {
-							CalibrationService.calibrationOnRequest(false, false, true, snoozeCalibrationRequest);
+							CalibrationService.calibrationOnRequest(false, true, snoozeCalibrationRequest);
 						} else if (notificationEvent.identifier == NotificationService.ID_FOR_CALIBRATION_REQUEST_ALERT_SNOOZE_IDENTIFIER) {
 							_calibrationRequestSnoozePeriodInMinutes = alertType.defaultSnoozePeriodInMinutes;
 							myTrace("in notificationReceived with id = ID_FOR_CALIBRATION_REQUEST_ALERT, snoozing the notification for " + _calibrationRequestSnoozePeriodInMinutes + " minutes");
@@ -555,7 +562,13 @@ package services
 				myTrace("in snoozeCalibrationRequest");
 				AlarmSnoozer.instance.addEventListener(AlarmSnoozer.CLOSED, calibrationRequestSnoozePicker_closedHandler);
 				AlarmSnoozer.instance.addEventListener(AlarmSnoozer.CANCELLED, snoozePickerChangedOrCanceledHandler);
-				AlarmSnoozer.displaySnoozer(ModelLocator.resourceManagerInstance.getString("alarmservice","snooze_text_calibration_alert"), snoozeValueStrings, index);
+				SystemUtil.executeWhenApplicationIsActive
+				(
+					AlarmSnoozer.displaySnoozer,
+					ModelLocator.resourceManagerInstance.getString("alarmservice","snooze_text_calibration_alert"),
+					snoozeValueStrings,
+					index
+				);
 			}
 			
 			function calibrationRequestSnoozePicker_closedHandler(event:starling.events.Event): void {
@@ -705,15 +718,36 @@ package services
 			{
 				AlarmSnoozer.instance.addEventListener(AlarmSnoozer.CLOSED, snoozePickerClosedHandler);
 				AlarmSnoozer.instance.addEventListener(AlarmSnoozer.CANCELLED, canceledHandler);
-				if (snoozeText == "low_alert_notification_alert_text" ||
+				if 
+				(
+					snoozeText == "low_alert_notification_alert_text" ||
 					snoozeText == "verylow_alert_notification_alert_text" ||
 					snoozeText == "high_alert_notification_alert_text" ||
-					snoozeText == "veryhigh_alert_notification_alert_text")
+					snoozeText == "veryhigh_alert_notification_alert_text" ||
+					snoozeText == "snooze_text_low_alert" ||
+					snoozeText == "snooze_text_very_low_alert" ||
+					snoozeText == "snooze_text_high_alert" ||
+					snoozeText == "snooze_text_very_high_alert"
+				)
 				{
-					AlarmSnoozer.displaySnoozer(ModelLocator.resourceManagerInstance.getString("alarmservice",snoozeText) + " (" + BgGraphBuilder.unitizedString(BgReading.lastNoSensor().calculatedValue, CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true") + ")", snoozeValueStrings, index);
+					SystemUtil.executeWhenApplicationIsActive
+					(
+						AlarmSnoozer.displaySnoozer,
+						ModelLocator.resourceManagerInstance.getString("alarmservice",snoozeText) + "\n" + BgGraphBuilder.unitizedString(BgReading.lastNoSensor().calculatedValue, CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_DO_MGDL) == "true") + " " + GlucoseHelper.getGlucoseUnit(),
+						snoozeValueStrings,
+						index
+					);
 				}
 				else
-					AlarmSnoozer.displaySnoozer(ModelLocator.resourceManagerInstance.getString("alarmservice",snoozeText), snoozeValueStrings, index);
+				{
+					SystemUtil.executeWhenApplicationIsActive
+					(
+						AlarmSnoozer.displaySnoozer,
+						ModelLocator.resourceManagerInstance.getString("alarmservice",snoozeText),
+						snoozeValueStrings,
+						index
+					);
+				}
 			} 
 			else if (notificationEvent.identifier == alertSnoozeIdentifier) {
 				snoozeValueSetter(alertType.defaultSnoozePeriodInMinutes);
@@ -1068,12 +1102,11 @@ package services
 			myTrace("in planApplicationStoppedAlert, planning alert for the future");
 			cancelInactiveAlert();
 			
-			if (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE) != "" && (Calibration.allForSensor().length >= 2 || BlueToothDevice.isFollower()))
+			if ((CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_PERIPHERAL_TYPE) != "" && Calibration.allForSensor().length >= 2) || BlueToothDevice.isFollower())
 			{
 				Notifications.service.cancel(NotificationService.ID_FOR_APPLICATION_INACTIVE_ALERT);
 				
 				var notificationBuilder:NotificationBuilder = new NotificationBuilder()
-					.setCount(BadgeBuilder.getAppBadge())
 					.setId(NotificationService.ID_FOR_APPLICATION_INACTIVE_ALERT)
 					.setAlert(ModelLocator.resourceManagerInstance.getString("globaltranslations","warning_alert_title"))
 					.setTitle(ModelLocator.resourceManagerInstance.getString("globaltranslations","warning_alert_title"))
@@ -1086,7 +1119,7 @@ package services
 				Notifications.service.notify(notificationBuilder.build());
 			}
 			else
-				myTrace("in planApplicationStoppedAlert, not planning an inactive alert... user has not set a transmitter yet.");
+				myTrace("in planApplicationStoppedAlert, not planning an inactive alert... user has not set a transmitter yet or doesn't have enough calibrtions.");
 		}
 		
 		private static function checkMissedReadingAlert():void {
@@ -1106,14 +1139,14 @@ package services
 			}
 			var lastBgReading:BgReading 
 			if (!BlueToothDevice.isFollower()) {
-				var lastBgReadings:ArrayCollection = BgReading.latest(1);
+				var lastBgReadings:Array = BgReading.latest(1);
 				if (lastBgReadings.length == 0) {
 					myTrace("in checkMissedReadingAlert, but no readings exist yet, not planning a missed reading alert now, and cancelling any missed reading alert that maybe still exists");
 					myTrace("cancel any existing alert for ID_FOR_MISSED_READING_ALERT");
 					Notifications.service.cancel(NotificationService.ID_FOR_MISSED_READING_ALERT);
 					return;
 				} 
-				lastBgReading = lastBgReadings.getItemAt(0) as BgReading;
+				lastBgReading = lastBgReadings[0] as BgReading;
 			} else {
 				lastBgReading = BgReading.lastWithCalculatedValue();
 				if (lastBgReading == null) {
@@ -1138,6 +1171,19 @@ package services
 					//not snoozed
 					if (((now.valueOf() - lastBgReading.timestamp) > alertValue * 60 * 1000) && ((now.valueOf() - ModelLocator.appStartTimestamp) > 5 * 60 * 1000)) {
 						myTrace("in checkAlarms, missed reading");
+						
+						var alertBody:String = " ";
+						if (BlueToothDevice.isMiaoMiao()) 
+						{
+							if (BluetoothService.amountOfConsecutiveSensorNotDetectedForMiaoMiao > 0) 
+							{
+								alertBody = ModelLocator.resourceManagerInstance.getString("alarmservice","received");
+								alertBody += " " + BluetoothService.amountOfConsecutiveSensorNotDetectedForMiaoMiao + " ";
+								alertBody += ModelLocator.resourceManagerInstance.getString("alarmservice","consecutive_sensor_not_detected");
+							}
+							myTrace("in checkMissedReadingAlert, fire alert with body = " + alertBody);
+						}
+						
 						fireAlert(
 							5,
 							alertType, 
@@ -1145,7 +1191,8 @@ package services
 							ModelLocator.resourceManagerInstance.getString("alarmservice","missed_reading_alert_notification_alert"), 
 							alertType.enableVibration,
 							alertType.enableLights,
-							NotificationService.ID_FOR_ALERT_MISSED_READING_CATEGORY
+							NotificationService.ID_FOR_ALERT_MISSED_READING_CATEGORY,
+							alertBody
 						); 
 						_missedReadingAlertLatestSnoozeTimeInMs = Number.NaN;
 						_missedReadingAlertSnoozePeriodInMinutes = 0;
@@ -1250,6 +1297,12 @@ package services
 					 if ((BlueToothDevice.isDexcomG4() && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_G4_TRANSMITTER_BATTERY_VOLTAGE)) < alertValue) && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_G4_TRANSMITTER_BATTERY_VOLTAGE)) > 0))
 						 ||
 						 (BlueToothDevice.isBluKon() && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_BLUKON_BATTERY_LEVEL)) < alertValue) && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_BLUKON_BATTERY_LEVEL)) > 0))
+						 ||
+						 (BlueToothDevice.isMiaoMiao() && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_MIAOMIAO_BATTERY_LEVEL)) < alertValue) && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_MIAOMIAO_BATTERY_LEVEL)) > 0))
+						 ||
+						 (BlueToothDevice.isxBridgeR() && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_XBRIDGER_BATTERY_LEVEL)) < alertValue) && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_XBRIDGER_BATTERY_LEVEL)) > 0))
+						 ||
+						 (BlueToothDevice.isBlueReader() && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_BLUEREADER_BATTERY_LEVEL)) < alertValue) && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_BLUEREADER_BATTERY_LEVEL)) > 0))
 						 ||
 						 (BlueToothDevice.isDexcomG5() && (new Number(CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_G5_VOLTAGEA)) < alertValue) && (CommonSettings.getCommonSetting(CommonSettings.COMMON_SETTING_G5_VOLTAGEA) != "unknown"))) {
 						 myTrace("in checkAlarms, battery level is too low");
@@ -1468,7 +1521,7 @@ package services
 			 alertValue = listOfAlerts.getValue(Number.NaN, "", now);
 			 alertName = listOfAlerts.getAlarmName(Number.NaN, "", now);
 			 alertType = Database.getAlertType(alertName);
-			 if (alertType.enabled) {
+			 if (alertType != null && alertType.enabled) {
 				 //first check if snoozeperiod is passed, checking first for value would generate multiple alarms in case the sensor is unstable
 				 if ((now.valueOf() - _veryLowAlertLatestSnoozeTimeInMs) > _veryLowAlertSnoozePeriodInMinutes * 60 * 1000
 					 ||
@@ -1705,7 +1758,7 @@ package services
 							Notifications.service.cancel(repeatAlertsNotificationIds[cntr]);//remove any notification that may already exist
 							
 							//remove also any open pickerdialog
-							AlarmSnoozer.closeCallout();
+							SystemUtil.executeWhenApplicationIsActive( AlarmSnoozer.closeCallout );
 							
 							//fire the alert again
 							fireAlert(
